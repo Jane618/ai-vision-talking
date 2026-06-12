@@ -8,6 +8,7 @@ import {
   MultimodalSettings,
   sendMultimodal,
   speakWithBrowserTTS,
+  stopSpeaking as stopSpeakingCore,
 } from '../api/client';
 
 interface UseConversationOptions {
@@ -20,11 +21,13 @@ interface UseConversationResult {
   sessionId: string;
   messages: ConversationMessage[];
   isSending: boolean;
+  isSpeaking: boolean;
   error: string | null;
   cost: CostInfo;
   sendMessage: (userText: string, image?: string) => Promise<void>;
   clearMessages: () => void;
   resetSession: () => void;
+  stopSpeaking: () => void;
 }
 
 const DEFAULT_COST: CostInfo = {
@@ -45,6 +48,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   const [sessionId, setSessionId] = useState<string>(() => createSessionId());
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cost, setCost] = useState<CostInfo>(DEFAULT_COST);
 
@@ -53,7 +57,30 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     if (typeof window !== 'undefined' && !audioRef.current) {
       const a = new Audio();
       audioRef.current = a;
+      // 监听播放状态，同步 isSpeaking
+      a.addEventListener('play', () => setIsSpeaking(true));
+      a.addEventListener('ended', () => setIsSpeaking(false));
+      a.addEventListener('pause', () => setIsSpeaking(false));
+      a.addEventListener('error', () => setIsSpeaking(false));
     }
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.removeEventListener('play', () => setIsSpeaking(true));
+        audioRef.current.removeEventListener('ended', () => setIsSpeaking(false));
+        audioRef.current.removeEventListener('pause', () => setIsSpeaking(false));
+        audioRef.current.removeEventListener('error', () => setIsSpeaking(false));
+      }
+    };
+  }, []);
+
+  // 监听浏览器 TTS 的 speaking 状态，同步到 isSpeaking
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    const interval = window.setInterval(() => {
+      const ttsSpeaking = window.speechSynthesis?.speaking ?? false;
+      setIsSpeaking((prev) => prev || ttsSpeaking);
+    }, 300);
+    return () => window.clearInterval(interval);
   }, []);
 
   const playAudio = useCallback(async (base64: string, mimeType?: string) => {
@@ -157,6 +184,11 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     setError(null);
   }, []);
 
+  const stopSpeaking = useCallback(() => {
+    stopSpeakingCore(audioRef.current);
+    setIsSpeaking(false);
+  }, []);
+
   const resetSession = useCallback(() => {
     const newSession = createSessionId();
     clearSessionApi(sessionId).catch(() => undefined);
@@ -170,10 +202,12 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     sessionId,
     messages,
     isSending,
+    isSpeaking,
     error,
     cost,
     sendMessage,
     clearMessages,
     resetSession,
+    stopSpeaking,
   };
 }
