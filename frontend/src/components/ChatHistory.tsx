@@ -10,6 +10,8 @@ interface ChatHistoryProps {
   }>;
   interimText?: string;
   isSending?: boolean;
+  onClear: () => void;
+  onResetSession: () => void;
 }
 
 function formatTime(ts: number): string {
@@ -19,10 +21,10 @@ function formatTime(ts: number): string {
 }
 
 /**
- * 气泡式对话历史：用户靠右、AI 靠左，system 灰底居中提示。
- * 追加新消息时自动滚动到底部。
+ * 气泡式对话历史：用户靠右、AI 靠左、system 灰底居中。
+ * 顶部提供「清空对话」「重置会话」操作按钮，追加消息时自动滚动到底部。
  */
-export function ChatHistory({ messages, interimText, isSending }: ChatHistoryProps) {
+export function ChatHistory({ messages, interimText, isSending, onClear, onResetSession }: ChatHistoryProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,8 +36,18 @@ export function ChatHistory({ messages, interimText, isSending }: ChatHistoryPro
   return (
     <div className="card chat-history">
       <div className="chat-history__header">
-        <span className="chat-history__title">对话</span>
-        <span className="chat-history__count">{messages.length} 条</span>
+        <div className="chat-history__title-wrap">
+          <span className="chat-history__title">对话</span>
+          <span className="chat-history__count">{messages.length} 条</span>
+        </div>
+        <div className="chat-history__actions">
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onClear}>
+            清空对话
+          </button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onResetSession}>
+            重置会话
+          </button>
+        </div>
       </div>
       <div className="chat-history__list" ref={listRef}>
         {messages.length === 0 && (

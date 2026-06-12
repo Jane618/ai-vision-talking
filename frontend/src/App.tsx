@@ -10,11 +10,37 @@ import type { MultimodalSettings } from './api/client';
 import { captureFrame } from './video/frameSampler';
 
 /**
+ * 话筒图标（Feather Icons · Mic）
+ */
+function MicIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  );
+}
+
+/**
  * 主组件：
  * - 左侧：视频预览 + 当前抽帧缩略图
  * - 右上：对话历史
  * - 右下：设置面板 + 成本统计
- * - 顶部：文本输入框（回车发送），也支持语音输入
+ * - 底部：文本输入框（回车发送），支持语音输入
  */
 export default function App() {
   const [settings, setSettings] = useState<MultimodalSettings>({
@@ -41,6 +67,7 @@ export default function App() {
     isSending,
     error: convError,
     cost,
+    sessionId,
     sendMessage,
     clearMessages,
     resetSession,
@@ -55,7 +82,6 @@ export default function App() {
     stop: stopASR,
     isListening,
     isSupported: asrSupported,
-    error: asrError,
     interimText,
   } = useASR({
     lang: 'zh-CN',
@@ -145,7 +171,13 @@ export default function App() {
         </section>
 
         <section className="app__right">
-          <ChatHistory messages={messages} interimText={interimText} isSending={isSending} />
+          <ChatHistory
+            messages={messages}
+            interimText={interimText}
+            isSending={isSending}
+            onClear={clearMessages}
+            onResetSession={resetSession}
+          />
 
           <div className="input-bar">
             <input
@@ -159,11 +191,13 @@ export default function App() {
             />
             <button
               type="button"
-              className={`btn ${isListening ? 'btn--danger' : 'btn--primary'}`}
+              className={`btn btn--with-icon ${isListening ? 'btn--danger' : 'btn--primary'}`}
               onClick={handleToggleListening}
               disabled={!asrSupported || isSending}
+              title={asrSupported ? '开启/关闭语音识别' : '当前浏览器不支持语音识别'}
             >
-              {isListening ? '停止语音' : '语音输入'}
+              <MicIcon className="btn__icon" />
+              <span>{isListening ? '停止语音' : '语音输入'}</span>
             </button>
             <button type="button" className="btn btn--primary" onClick={handleSend} disabled={isSending}>
               发送
@@ -176,21 +210,15 @@ export default function App() {
               onChange={setSettings}
               isRunning={isRunning}
               onToggleRunning={handleToggleRunning}
-              onClear={clearMessages}
-              onResetSession={resetSession}
-              isListening={isListening}
-              onToggleListening={handleToggleListening}
-              asrSupported={asrSupported}
-              asrError={asrError}
             />
-            <CostStats cost={cost} sessionId="session" />
+            <CostStats cost={cost} sessionId={sessionId} />
           </div>
         </section>
       </main>
 
-      {(convError || asrError) && (
+      {convError && (
         <footer className="app__footer">
-          {convError && <div className="error">{convError}</div>}
+          <div className="error">{convError}</div>
         </footer>
       )}
     </div>

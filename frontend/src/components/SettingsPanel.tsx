@@ -5,38 +5,21 @@ interface SettingsPanelProps {
   onChange: (next: MultimodalSettings) => void;
   isRunning: boolean;
   onToggleRunning: () => void;
-  onClear: () => void;
-  onResetSession: () => void;
-  isListening: boolean;
-  onToggleListening: () => void;
-  asrSupported: boolean;
-  asrError?: string | null;
 }
 
 /**
- * 设置面板：抽帧频率 / 画质 / 分辨率滑块 + 开始/暂停按钮 + 清空/重置会话。
+ * 画面设置面板：抽帧频率 / 画质 / 分辨率滑块 + 开始/暂停传输按钮。
+ * 清空对话/重置会话已移到对话模块。
  */
-export function SettingsPanel({
-  settings,
-  onChange,
-  isRunning,
-  onToggleRunning,
-  onClear,
-  onResetSession,
-  isListening,
-  onToggleListening,
-  asrSupported,
-  asrError,
-}: SettingsPanelProps) {
-  const update = (patch: Partial<MultimodalSettings>) =>
-    onChange({ ...settings, ...patch });
+export function SettingsPanel({ settings, onChange, isRunning, onToggleRunning }: SettingsPanelProps) {
+  const update = (patch: Partial<MultimodalSettings>) => onChange({ ...settings, ...patch });
 
   return (
     <div className="card settings-panel">
       <div className="settings-panel__header">
-        <span className="settings-panel__title">设置</span>
+        <span className="settings-panel__title">画面设置</span>
         <span className={`badge ${isRunning ? 'badge--ok' : 'badge--off'}`}>
-          {isRunning ? '运行中' : '已暂停'}
+          {isRunning ? '画面传输中' : '已暂停'}
         </span>
       </div>
 
@@ -94,26 +77,9 @@ export function SettingsPanel({
           className={`btn ${isRunning ? 'btn--warning' : 'btn--primary'}`}
           onClick={onToggleRunning}
         >
-          {isRunning ? '暂停' : '开始'}
-        </button>
-        <button
-          type="button"
-          className={`btn ${isListening ? 'btn--danger' : 'btn--ghost'}`}
-          onClick={onToggleListening}
-          disabled={!asrSupported}
-          title={asrSupported ? '开启/关闭语音识别' : '当前浏览器不支持语音识别'}
-        >
-          {isListening ? '停止语音' : '语音输入'}
-        </button>
-        <button type="button" className="btn btn--ghost" onClick={onClear}>
-          清空对话
-        </button>
-        <button type="button" className="btn btn--ghost" onClick={onResetSession}>
-          重置会话
+          {isRunning ? '暂停传输' : '开始传输画面'}
         </button>
       </div>
-
-      {asrError && <div className="settings-panel__error">{asrError}</div>}
     </div>
   );
 }
