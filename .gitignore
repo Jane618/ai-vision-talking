@@ -30,3 +30,6 @@ Thumbs.db
 
 # æµ‹è¯•è¦†ç›–ç‡
 coverage/
+
+# SSL/TLS ×ÔÇ©ÃûÖ¤Êé£¨ÇëÎğÌá½»Ë½Ô¿£¬Ê¹ÓÃ mkcert ×ÔĞĞÉú³É£©
+backend/certs/
