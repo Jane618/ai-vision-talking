@@ -10,6 +10,17 @@ import type { MultimodalSettings } from './api/client';
 import { captureFrame } from './video/frameSampler';
 
 /**
+ * 中断播报关键词列表：用户在语音输入时说这些词即可中断当前播报。
+ */
+const STOP_SPEAKING_KEYWORDS = ['停止', '停一下', '别讲了', '别说话', '别说了', '停', '闭嘴', '暂停播报', '停止播报'];
+
+function containsStopKeyword(text: string): boolean {
+  const t = (text || '').trim();
+  if (!t) return false;
+  return STOP_SPEAKING_KEYWORDS.some((kw) => t.includes(kw));
+}
+
+/**
  * 话筒图标（Feather Icons · Mic）
  */
 function MicIcon({ className }: { className?: string }) {
@@ -40,7 +51,7 @@ function MicIcon({ className }: { className?: string }) {
  * - 左侧：视频预览 + 当前抽帧缩略图
  * - 右上：对话历史
  * - 右下：设置面板 + 成本统计
- * - 底部：文本输入框（回车发送），支持语音输入
+ * - 底部：文本输入框（回车发送），支持语音输入；播报时显示「停止播报」按钮
  */
 export default function App() {
   const [settings, setSettings] = useState<MultimodalSettings>({
@@ -65,18 +76,21 @@ export default function App() {
   const {
     messages,
     isSending,
+    isSpeaking,
     error: convError,
     cost,
     sessionId,
     sendMessage,
     clearMessages,
     resetSession,
+    stopSpeaking,
   } = useConversation({
     settings,
     getCurrentFrame: () => currentFrameRef.current || undefined,
   });
 
   // 语音识别：静音结束 -> 直接发送
+  // 注意：此处 onSentenceEnd 会先检查停止关键词 -> 中断播报，不发送新消息
   const {
     start: startASR,
     stop: stopASR,
@@ -87,10 +101,23 @@ export default function App() {
     lang: 'zh-CN',
     silenceMs: 1200,
     onSentenceEnd: (text) => {
+      // 1) 先判断是否是中断播报指令
+      if (containsStopKeyword(text)) {
+        stopSpeaking();
+        return;
+      }
+      // 2) 正常流程：发送给 AI
       const frameForSend = currentFrameRef.current || undefined;
       sendMessage(text, frameForSend);
     },
   });
+
+  // 将实时识别文本显示到输入框（不发送到对话历史）
+  useEffect(() => {
+    if (isListening) {
+      setInputText(interimText || '');
+    }
+  }, [interimText, isListening]);
 
   // 运行中：按 frameIntervalMs 周期抽帧，并在有变化时更新 currentFrame
   useEffect(() => {
@@ -130,6 +157,7 @@ export default function App() {
   const handleToggleListening = () => {
     if (isListening) {
       stopASR();
+      setInputText('');
     } else {
       startASR();
     }
@@ -173,7 +201,6 @@ export default function App() {
         <section className="app__right">
           <ChatHistory
             messages={messages}
-            interimText={interimText}
             isSending={isSending}
             onClear={clearMessages}
             onResetSession={resetSession}
@@ -199,6 +226,17 @@ export default function App() {
               <MicIcon className="btn__icon" />
               <span>{isListening ? '停止语音' : '语音输入'}</span>
             </button>
+            {isSpeaking && (
+              <button
+                type="button"
+                className="btn btn--warning btn--with-icon"
+                onClick={stopSpeaking}
+                title="停止当前 AI 语音播报（也可以在语音输入时说「停止」「别讲了」等关键词）"
+              >
+                <span>⏹</span>
+                <span>停止播报</span>
+              </button>
+            )}
             <button type="button" className="btn btn--primary" onClick={handleSend} disabled={isSending}>
               发送
             </button>
