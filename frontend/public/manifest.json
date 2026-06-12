@@ -1,0 +1,25 @@
+{
+  "name": "AI Talking · 多模态语音对话",
+  "short_name": "AI Talking",
+  "description": "让 AI 看到摄像头画面、听到你的声音，并给予恰当的中文回复",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

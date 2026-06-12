@@ -1,16 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-
 /**
- * 语音识别：
- * - 优先使用浏览器内置 Web Speech API (SpeechRecognition / webkitSpeechRecognition)。
- * - 如果浏览器不支持，返回 isSupported = false，供 UI 提示用户。
- * - 包含静音检测：收到 final 结果 或 停顿 > silenceMs 毫秒 触发 onSentenceEnd 回调。
+ * 语音识别 —— 双路径
+ *   - Capacitor 原生壳：@capacitor-community/speech-recognition（更稳定、零延迟）
+ *   - 浏览器环境：Web Speech API（SpeechRecognition / webkitSpeechRecognition）
  *
- * 注意：FunASR-WASM 是另一种替代方案，可以作为后续接入，
- *       本 Hook 保留 start/stop/onSentenceEnd 接口，便于替换实现。
+ * 静音检测：收到文本后，若 silenceMs 毫秒内没有新文本，视为一句话结束。
  */
 
-type SpeechRecognitionCtor = new () => any;
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getCapacitorASR, isCapacitor } from '../platform';
 
 interface UseASROptions {
   lang?: string;
@@ -19,8 +16,8 @@ interface UseASROptions {
 }
 
 interface UseASRResult {
-  text: string;              // 最近一次完整识别文本（final 结果拼接）
-  interimText: string;       // 实时临时文本
+  text: string;
+  interimText: string;
   isListening: boolean;
   isSupported: boolean;
   error: string | null;
@@ -29,13 +26,18 @@ interface UseASRResult {
   reset: () => void;
 }
 
-function getSpeechRecognition(): SpeechRecognitionCtor | null {
+type SpeechRecognitionCtor = new () => any;
+
+function getBrowserSpeechRecognition(): SpeechRecognitionCtor | null {
   if (typeof window === 'undefined') return null;
-  const w = window as unknown as {
-    SpeechRecognition?: SpeechRecognitionCtor;
-    webkitSpeechRecognition?: SpeechRecognitionCtor;
-  };
+  const w = window as any;
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
+/** 检测当前环境是否支持任何一种语音识别 */
+export function hasSpeechRecognition(): boolean {
+  if (isCapacitor() && getCapacitorASR()) return true;
+  return !!getBrowserSpeechRecognition();
 }
 
 export function useASR(options: UseASROptions = {}): UseASRResult {
@@ -46,18 +48,19 @@ export function useASR(options: UseASROptions = {}): UseASRResult {
   const onSentenceEndRef = useRef(onSentenceEnd);
   const manualStopRef = useRef(false);
   const finalBufferRef = useRef<string>('');
+  const interimTextRef = useRef<string>('');
 
   const [text, setText] = useState('');
   const [interimText, setInterimText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const Ctor = getSpeechRecognition();
-  const isSupported = !!Ctor;
+  const useNative = isCapacitor() && !!getCapacitorASR();
+  const BrowserCtor = getBrowserSpeechRecognition();
+  const isSupported = useNative || !!BrowserCtor;
 
-  useEffect(() => {
-    onSentenceEndRef.current = onSentenceEnd;
-  }, [onSentenceEnd]);
+  useEffect(() => { onSentenceEndRef.current = onSentenceEnd; }, [onSentenceEnd]);
+  useEffect(() => { interimTextRef.current = interimText; }, [interimText]);
 
   const clearSilenceTimer = () => {
     if (silenceTimerRef.current !== null) {
@@ -69,7 +72,6 @@ export function useASR(options: UseASROptions = {}): UseASRResult {
   const armSilenceTimer = useCallback(() => {
     clearSilenceTimer();
     silenceTimerRef.current = window.setTimeout(() => {
-      // 到达静音阈值：把当前 interim 视为一次完整输入
       const finalText = (finalBufferRef.current + ' ' + interimTextRef.current).trim();
       if (finalText) {
         finalBufferRef.current = '';
@@ -79,65 +81,97 @@ export function useASR(options: UseASROptions = {}): UseASRResult {
     }, silenceMs);
   }, [silenceMs]);
 
-  // interimTextRef 便于在闭包里拿到最新值
-  const interimTextRef = useRef('');
-  useEffect(() => {
-    interimTextRef.current = interimText;
-  }, [interimText]);
+  /* ---------- 原生 ASR ---------- */
+  const startNative = useCallback(async () => {
+    const asr = getCapacitorASR();
+    if (!asr) { setError('原生语音识别不可用'); return; }
+    try {
+      manualStopRef.current = false;
+      const available = await asr.available().catch(() => ({ available: true }));
+      if (available && available.available === false) {
+        setError('当前设备不支持原生语音识别');
+        return;
+      }
+      try { await asr.requestPermissions(); } catch { /* 权限可能已经授予 */ }
 
-  const start = useCallback(() => {
-    if (!Ctor) {
-      setError('当前浏览器不支持语音识别，请使用最新版 Chrome/Edge，或手动输入文本。');
-      return;
+      // 注册监听器
+      if (asr.addListener) {
+        recognitionRef.current = await asr.addListener('partialResults', (data: any) => {
+          const matches = data.matches || [];
+          if (matches.length > 0) {
+            const partial = matches[0];
+            setInterimText(partial);
+            armSilenceTimer();
+          }
+        });
+        // 监听 final 结果
+        if (asr.addListener) {
+          try { await asr.addListener('listeningResult', (data: any) => { /* ignore */ }); } catch { /* ignore */ }
+        }
+      }
+
+      await asr.start({
+        language: lang,
+        partialResults: true,
+        maxResults: 1,
+      });
+      setIsListening(true);
+      setError(null);
+      armSilenceTimer();
+    } catch (err: unknown) {
+      setError('原生语音识别启动失败：' + ((err as Error)?.message || '未知错误'));
+      setIsListening(false);
     }
-    if (recognitionRef.current && isListening) {
-      return;
+  }, [lang, armSilenceTimer]);
+
+  const stopNative = useCallback(() => {
+    manualStopRef.current = true;
+    clearSilenceTimer();
+    const asr = getCapacitorASR();
+    if (asr && typeof asr.stop === 'function') {
+      try { asr.stop(); } catch { /* ignore */ }
     }
+    setIsListening(false);
+  }, []);
+
+  /* ---------- 浏览器 ASR ---------- */
+  const startBrowser = useCallback(() => {
+    const Ctor = getBrowserSpeechRecognition();
+    if (!Ctor) { setError('当前浏览器不支持语音识别，请使用最新版 Chrome/Edge。'); return; }
     try {
       manualStopRef.current = false;
       const recognition = new Ctor();
       recognition.lang = lang;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
 
-    recognition.onresult = (event: any) => {
-      let interim = '';
-      let finalChunk = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i];
-        const transcript: string = res[0]?.transcript ?? '';
-        if (res.isFinal) {
-          finalChunk += transcript;
-        } else {
-          interim += transcript;
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        let finalChunk = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const res = event.results[i];
+          const transcript: string = res[0]?.transcript ?? '';
+          if (res.isFinal) finalChunk += transcript;
+          else interim += transcript;
         }
-      }
-      setInterimText(interim);
-      if (finalChunk) {
-        finalBufferRef.current = (finalBufferRef.current + ' ' + finalChunk).trim();
-        // 得到 final：刷新静音计时
-        armSilenceTimer();
-      } else if (interim) {
-        // interim 到达时重置计时
-        armSilenceTimer();
-      }
-    };
+        setInterimText(interim);
+        if (finalChunk) {
+          finalBufferRef.current = (finalBufferRef.current + ' ' + finalChunk).trim();
+          armSilenceTimer();
+        } else if (interim) {
+          armSilenceTimer();
+        }
+      };
 
-    recognition.onerror = (ev: any) => {
-      // no-speech / audio-capture 等常见错误可以忽略
-      if (ev?.error === 'no-speech' || ev?.error === 'aborted') return;
-      setError('语音识别错误：' + (ev?.error || '未知'));
-    };
+      recognition.onerror = (ev: any) => {
+        if (ev?.error === 'no-speech' || ev?.error === 'aborted') return;
+        setError('语音识别错误：' + (ev?.error || '未知'));
+      };
 
-    recognition.onend = () => {
-      // 如果不是手动 stop 手动停止，则自动重启，维持 continuous
-      if (!manualStopRef.current) {
-        try {
-          recognition.start();
-        } catch {
-            setIsListening(false);
-          }
+      recognition.onend = () => {
+        if (!manualStopRef.current) {
+          try { recognition.start(); } catch { setIsListening(false); }
         } else {
           setIsListening(false);
         }
@@ -151,18 +185,26 @@ export function useASR(options: UseASROptions = {}): UseASRResult {
     } catch (err: unknown) {
       setError('启动语音识别失败：' + ((err as Error)?.message || '未知错误'));
     }
-  }, [Ctor, isListening, lang, armSilenceTimer]);
+  }, [lang, armSilenceTimer]);
 
-  const stop = useCallback(() => {
+  const stopBrowser = useCallback(() => {
     manualStopRef.current = true;
     clearSilenceTimer();
-    try {
-      recognitionRef.current?.stop?.();
-    } catch {
-        /* ignore */
-      }
+    try { recognitionRef.current?.stop?.(); } catch { /* ignore */ }
     setIsListening(false);
   }, []);
+
+  /* ---------- 统一接口 ---------- */
+  const start = useCallback(() => {
+    if (isListening) return;
+    if (useNative) startNative();
+    else startBrowser();
+  }, [isListening, useNative, startNative, startBrowser]);
+
+  const stop = useCallback(() => {
+    if (useNative) stopNative();
+    else stopBrowser();
+  }, [useNative, stopNative, stopBrowser]);
 
   const reset = useCallback(() => {
     setText('');
@@ -170,11 +212,7 @@ export function useASR(options: UseASROptions = {}): UseASRResult {
     finalBufferRef.current = '';
   }, []);
 
-  useEffect(() => {
-    return () => {
-      stop();
-    };
-  }, [stop]);
+  useEffect(() => () => stop(), [stop]);
 
   return { text, interimText, isListening, isSupported, error, start, stop, reset };
 }

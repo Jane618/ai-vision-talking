@@ -1,20 +1,41 @@
+/**
+ * 对话逻辑：
+ *   - 收到用户文本（+ 当前画面）后，调用 sendMultimodal
+ *   - AI 返回 replyText 后：
+ *       * 在原生壳里优先用 Capacitor TTS（@capacitor-community/text-to-speech）
+ *       * 在浏览器里用 SpeechSynthesis
+ *   - 支持：手动停止播报、出错提示、成本统计
+ */
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   base64ToAudioBlob,
   clearSessionApi,
-  ConversationMessage,
-  CostInfo,
-  createSessionId,
-  MultimodalSettings,
   sendMultimodal,
   speakWithBrowserTTS,
   stopSpeaking as stopSpeakingCore,
+  type MultimodalRequest,
 } from '../api/client';
+import { createSessionId, type CostInfo } from '../api/client';
+import { getCapacitorTTS, isCapacitor } from '../platform';
+
+interface MultimodalSettings {
+  frameIntervalMs: number;
+  imageQuality: number;
+  imageSize: number;
+}
+
+interface ConversationMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  ts: number;
+  hasImage?: boolean;
+}
 
 interface UseConversationOptions {
   settings: MultimodalSettings;
-  getCurrentFrame?: () => string | undefined; // 返回当前 base64 缩略帧
-  onFrameCaptured?: (base64: string) => void;
+  getCurrentFrame?: () => string | undefined;
 }
 
 interface UseConversationResult {
@@ -31,15 +52,22 @@ interface UseConversationResult {
 }
 
 const DEFAULT_COST: CostInfo = {
-  callCount: 0,
-  promptTokens: 0,
-  completionTokens: 0,
-  totalTokens: 0,
-  estimatedCostCNY: 0,
+  callCount: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCostCNY: 0,
 };
 
-function uid() {
-  return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+function uid() { return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`; }
+
+/** 朗读文本：优先 Capacitor 原生 TTS，失败回退到浏览器 TTS */
+async function speakText(text: string, lang = 'zh-CN'): Promise<void> {
+  if (!text) return;
+  if (isCapacitor()) {
+    const tts = getCapacitorTTS();
+    if (tts && typeof tts.speak === 'function') {
+      try { await tts.speak({ text, lang, rate: 1.0, pitch: 1.0, volume: 1.0 }); return; }
+      catch { /* 回退到浏览器 TTS */ }
+    }
+  }
+  speakWithBrowserTTS(text, lang);
 }
 
 export function useConversation(options: UseConversationOptions): UseConversationResult {
@@ -53,75 +81,43 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   const [cost, setCost] = useState<CostInfo>(DEFAULT_COST);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !audioRef.current) {
-      const a = new Audio();
-      audioRef.current = a;
-      // 监听播放状态，同步 isSpeaking
-      a.addEventListener('play', () => setIsSpeaking(true));
-      a.addEventListener('ended', () => setIsSpeaking(false));
-      a.addEventListener('pause', () => setIsSpeaking(false));
-      a.addEventListener('error', () => setIsSpeaking(false));
-    }
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.removeEventListener('play', () => setIsSpeaking(true));
-        audioRef.current.removeEventListener('ended', () => setIsSpeaking(false));
-        audioRef.current.removeEventListener('pause', () => setIsSpeaking(false));
-        audioRef.current.removeEventListener('error', () => setIsSpeaking(false));
-      }
-    };
-  }, []);
 
-  // 监听浏览器 TTS 的 speaking 状态，同步到 isSpeaking
+  // 浏览器 TTS 状态轮询（用于展示 isSpeaking）
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    const interval = window.setInterval(() => {
-      const ttsSpeaking = window.speechSynthesis?.speaking ?? false;
-      setIsSpeaking((prev) => prev || ttsSpeaking);
-    }, 300);
-    return () => window.clearInterval(interval);
+    const iv = window.setInterval(() => {
+      const speaking = window.speechSynthesis?.speaking ?? false;
+      if (!speaking) setIsSpeaking((prev) => (prev ? false : prev));
+    }, 500);
+    return () => window.clearInterval(iv);
   }, []);
 
   const playAudio = useCallback(async (base64: string, mimeType?: string) => {
     try {
       const blob = base64ToAudioBlob(base64, mimeType || 'audio/wav');
       const url = URL.createObjectURL(blob);
-      if (audioRef.current && audioRef.current.src && audioRef.current.src !== '') {
-        try {
-          URL.revokeObjectURL(audioRef.current.src);
-        } catch {
-          /* ignore */
-        }
-      }
       if (audioRef.current) {
+        try { URL.revokeObjectURL(audioRef.current.src); } catch { /* ignore */ }
         audioRef.current.src = url;
         await audioRef.current.play().catch(() => undefined);
       }
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, []);
 
   const sendMessage = useCallback(
     async (userText: string, image?: string) => {
       const text = (userText || '').trim();
       if (!text) return;
+
       const userMsg: ConversationMessage = {
-        id: uid(),
-        role: 'user',
-        content: text,
-        ts: Date.now(),
-        hasImage: !!image,
+        id: uid(), role: 'user', content: text, ts: Date.now(), hasImage: !!image,
       };
       setMessages((prev) => [...prev, userMsg]);
-
       setIsSending(true);
       setError(null);
-      try {
-        // 如果调用方未传入 image，允许从 getCurrentFrame 回调获取
-        const currentImage = image ?? getCurrentFrame?.();
 
+      try {
+        const currentImage = image ?? getCurrentFrame?.();
         const response = await sendMultimodal({
           sessionId,
           userText: text,
@@ -130,47 +126,32 @@ export function useConversation(options: UseConversationOptions): UseConversatio
             frameIntervalMs: settings.frameIntervalMs,
             imageQuality: settings.imageQuality,
             imageSize: settings.imageSize,
-            enableTTS: true,
           },
-        });
+        } as MultimodalRequest);
 
         const aiReply = response.replyText || '';
-        const aiMsg: ConversationMessage = {
-          id: uid(),
-          role: 'assistant',
-          content: aiReply,
-          ts: Date.now(),
-        };
-        setMessages((prev) => [...prev, aiMsg]);
+        setMessages((prev) => [
+          ...prev,
+          { id: uid(), role: 'assistant', content: aiReply, ts: Date.now() },
+        ]);
+        if (response.cost) setCost(response.cost);
 
-        // 更新成本统计（从后端返回的 cost 字段读取）
-        if (response.cost) {
-          setCost({
-            callCount: response.cost.callCount,
-            promptTokens: response.cost.promptTokens,
-            completionTokens: response.cost.completionTokens,
-            totalTokens: response.cost.totalTokens,
-            estimatedCostCNY: response.cost.estimatedCostCNY,
-          });
-        }
-
-        // 播放 TTS：优先后端返回的 base64 音频，否则用浏览器内置 TTS
-        if (response.audioBase64 && aiReply) {
-          await playAudio(response.audioBase64, response.audioMimeType || undefined);
-        } else if (aiReply) {
-          speakWithBrowserTTS(aiReply);
+        if (aiReply) {
+          setIsSpeaking(true);
+          if (response.audioBase64) {
+            await playAudio(response.audioBase64, response.audioMimeType || undefined);
+          } else {
+            await speakText(aiReply);
+          }
+          // 兜底：若 30 秒后仍未结束，重置为 false
+          window.setTimeout(() => setIsSpeaking((s) => (s ? false : s)), 30_000);
         }
       } catch (err) {
         const message = (err as Error)?.message || '请求失败';
         setError(message);
         setMessages((prev) => [
           ...prev,
-          {
-            id: uid(),
-            role: 'system',
-            content: '（错误：' + message + '）',
-            ts: Date.now(),
-          },
+          { id: uid(), role: 'system', content: `（错误：${message}）`, ts: Date.now() },
         ]);
       } finally {
         setIsSending(false);
@@ -179,10 +160,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     [sessionId, settings, getCurrentFrame, playAudio],
   );
 
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-    setError(null);
-  }, []);
+  const clearMessages = useCallback(() => { setMessages([]); setError(null); }, []);
 
   const stopSpeaking = useCallback(() => {
     stopSpeakingCore(audioRef.current);
@@ -199,15 +177,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   }, [sessionId]);
 
   return {
-    sessionId,
-    messages,
-    isSending,
-    isSpeaking,
-    error,
-    cost,
-    sendMessage,
-    clearMessages,
-    resetSession,
-    stopSpeaking,
+    sessionId, messages, isSending, isSpeaking, error, cost,
+    sendMessage, clearMessages, resetSession, stopSpeaking,
   };
 }
