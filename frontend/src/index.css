@@ -594,3 +594,83 @@ input, textarea {
 .chat-history__list::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ---------- 移动端响应式（≤640px） ----------
+   - 按钮点击区域 ≥ 44px，字体略放大；
+   - 适配刘海屏（env(safe-area-inset-*)）；
+   - 视频预览压缩高度，对话区域占用更多屏幕；
+   - 禁止双指缩放，避免移动端 Safari 意外放大。
+*/
+@media (max-width: 640px) {
+  html {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app {
+    padding: 12px;
+    gap: 10px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+
+  .app__header {
+    padding-bottom: 8px;
+  }
+
+  .app__title {
+    font-size: 18px;
+  }
+
+  .video-preview {
+    min-height: 220px;
+  }
+
+  .video-preview__stage {
+    aspect-ratio: 4 / 3;
+    min-height: 200px;
+  }
+
+  .chat-history {
+    max-height: 45vh;
+    min-height: 180px;
+  }
+
+  .input-bar {
+    gap: 6px;
+  }
+
+  .input {
+    padding: 12px 14px;
+    font-size: 16px;
+  }
+
+  .btn {
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 15px;
+    border-radius: 10px;
+  }
+
+  .cost-stats__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* 横屏手机（≤500px 高） */
+@media (max-height: 500px) and (orientation: landscape) {
+  .video-preview {
+    min-height: 140px;
+  }
+  .video-preview__stage {
+    aspect-ratio: 16 / 9;
+  }
+  .chat-history {
+    max-height: 40vh;
+  }
+}
