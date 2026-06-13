@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatHistory } from './components/ChatHistory';
 import { CostStats } from './components/CostStats';
-import { SettingsPanel } from './components/SettingsPanel';
 import { ThemeToggle } from './components/ThemeToggle';
 import { VideoPreview } from './components/VideoPreview';
 import { useASR } from './hooks/useASR';
@@ -23,37 +22,10 @@ function containsStopKeyword(text: string): boolean {
 }
 
 /**
- * 话筒图标（Feather Icons · Mic）
- */
-function MicIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      xmlns="http://www.w3.org/2000/svg"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="23" />
-      <line x1="8" y1="23" x2="16" y2="23" />
-    </svg>
-  );
-}
-
-/**
  * 主组件：
- * - 左侧：视频预览 + 当前抽帧缩略图
- * - 右上：对话历史
- * - 右下：设置面板 + 成本统计
- * - 底部：文本输入框（回车发送），支持语音输入；播报时显示「停止播报」按钮
+ * - 顶部 Header（左上角状态栏：会话统计；中间标题；右侧主题切换）
+ * - 主体两列平分：左侧摄像头模块（含可展开的画面设置 + 场景预设），右侧对话模块（含可展开对话摘要）
+ * - 输入栏在对话模块底部
  */
 export default function App() {
   const defaultPreset = getScenePreset(DEFAULT_SCENE_PRESET_ID);
@@ -93,7 +65,6 @@ export default function App() {
   });
 
   // 语音识别：静音结束 -> 直接发送
-  // 注意：此处 onSentenceEnd 会先检查停止关键词 -> 中断播报，不发送新消息
   const {
     start: startASR,
     stop: stopASR,
@@ -104,18 +75,16 @@ export default function App() {
     lang: 'zh-CN',
     silenceMs: 1200,
     onSentenceEnd: (text) => {
-      // 1) 先判断是否是中断播报指令
       if (containsStopKeyword(text)) {
         stopSpeaking();
         return;
       }
-      // 2) 正常流程：发送给 AI
       const frameForSend = currentFrameRef.current || undefined;
       sendMessage(text, frameForSend);
     },
   });
 
-  // 将实时识别文本显示到输入框（不发送到对话历史）
+  // 将实时识别文本显示到输入框
   useEffect(() => {
     if (isListening) {
       setInputText(interimText || '');
@@ -123,11 +92,11 @@ export default function App() {
   }, [interimText, isListening]);
 
   const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (text: string) => {
       if (isSpeaking) {
         stopSpeaking();
       }
-      setInputText(e.target.value);
+      setInputText(text);
     },
     [isSpeaking, stopSpeaking],
   );
@@ -196,17 +165,20 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app app--split">
       <header className="app__header">
-        <h1 className="app__title">AI Talking · 多模态语音对话</h1>
+        <div className="app__header-left" />
+        <div className="app__header-center">
+          <h1 className="app__title">AI Talking · 多模态语音对话</h1>
+        </div>
         <div className="app__header-right">
-          <span className="hint">摄像头 + 语音 + 文本 → 多模态模型</span>
+          <CostStats cost={cost} sessionId={sessionId} />
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="app__grid">
-        <section className="app__left">
+      <main className="app__grid app__grid--split">
+        <section className="app__column app__column--left">
           <VideoPreview
             videoRef={videoRef}
             isReady={cameraReady}
@@ -215,62 +187,34 @@ export default function App() {
             currentFrame={currentFrame}
             cameraDisabled={!cameraReady}
             onToggleCamera={handleToggleCamera}
+            settings={settings}
+            onSettingsChange={setSettings}
+            isRunning={isRunning}
+            onToggleRunning={handleToggleRunning}
           />
         </section>
 
-        <section className="app__right">
+        <section className="app__column app__column--right">
           <ChatHistory
             messages={messages}
             isSending={isSending}
             onClear={clearMessages}
             onResetSession={resetSession}
+            settings={settings}
+            onSettingsChange={setSettings}
+            input={{
+              inputText,
+              onInputChange: handleInputChange,
+              onInputKeyDown: handleKeyDown,
+              onSend: handleSend,
+              onToggleListening: handleToggleListening,
+              onStopSpeaking: stopSpeaking,
+              isListening,
+              isSpeaking,
+              isInputLocked,
+              asrSupported: asrSupported ?? false,
+            }}
           />
-
-          <div className="input-bar">
-            <input
-              type="text"
-              className="input"
-              placeholder="输入消息后按 Enter 发送，或点击右侧「语音输入」"
-              value={inputText}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              disabled={isInputLocked}
-            />
-            <button
-              type="button"
-              className={`btn btn--with-icon ${isListening ? 'btn--danger' : 'btn--primary'}`}
-              onClick={handleToggleListening}
-              disabled={!asrSupported || isInputLocked}
-              title={asrSupported ? '开启/关闭语音识别' : '当前浏览器不支持语音识别'}
-            >
-              <MicIcon className="btn__icon" />
-              <span>{isListening ? '停止语音' : '语音输入'}</span>
-            </button>
-            {isSpeaking && (
-              <button
-                type="button"
-                className="btn btn--warning btn--with-icon"
-                onClick={stopSpeaking}
-                title="停止当前 AI 语音播报（也可以在语音输入时说「停止」「别讲了」等关键词）"
-              >
-                <span>⏹</span>
-                <span>停止播报</span>
-              </button>
-            )}
-            <button type="button" className="btn btn--primary" onClick={handleSend} disabled={isInputLocked}>
-              发送
-            </button>
-          </div>
-
-          <div className="app__bottom">
-            <SettingsPanel
-              settings={settings}
-              onChange={setSettings}
-              isRunning={isRunning}
-              onToggleRunning={handleToggleRunning}
-            />
-            <CostStats cost={cost} sessionId={sessionId} />
-          </div>
         </section>
       </main>
 
