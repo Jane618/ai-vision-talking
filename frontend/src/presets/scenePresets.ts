@@ -33,6 +33,66 @@ export const SCENE_PRESETS: ScenePreset[] = [
     },
   },
   {
+    id: 'casual-companion',
+    name: '日常陪聊',
+    icon: '☕',
+    description: '边做事边聊天、轻松陪伴、生活建议。',
+    tone: '轻松、有陪伴感',
+    settings: {
+      frameIntervalMs: 4500,
+      imageQuality: 0.72,
+      imageSize: 480,
+      summaryThresholdTokens: 6144,
+      systemPrompt:
+        '你是一个轻松、有陪伴感的中文 AI 伙伴。你可以看到摄像头画面并听到用户说话。请优先回应用户的情绪和当下问题，必要时简短提到画面里的关键信息。回答要自然、温和、简短，不要过度分析，不要使用 markdown 格式。',
+    },
+  },
+  {
+    id: 'visual-explain',
+    name: '看图讲解',
+    icon: '🖼️',
+    description: '解释图片、画面内容、物体关系和细节。',
+    tone: '清楚、会观察',
+    settings: {
+      frameIntervalMs: 1800,
+      imageQuality: 0.9,
+      imageSize: 768,
+      summaryThresholdTokens: 8192,
+      systemPrompt:
+        '你是一个中文看图讲解助手。请仔细观察摄像头画面中的主体、背景、文字、动作和细节关系，再结合用户问题回答。先说最确定的观察结果，再说明可能的含义；如果画面不清楚，请直接说明需要用户靠近、补光或换角度。回答要清楚、简短，不要使用 markdown 格式。',
+    },
+  },
+  {
+    id: 'text-solve',
+    name: '文本识别/讲题',
+    icon: '🧮',
+    description: '识别题目、书页、屏幕文字并讲解。',
+    tone: '准确、分步骤',
+    settings: {
+      frameIntervalMs: 1500,
+      imageQuality: 0.95,
+      imageSize: 960,
+      summaryThresholdTokens: 12288,
+      systemPrompt:
+        '你是一个中文文本识别和讲题助手。请优先识别摄像头画面中的文字、题目、公式、选项和图表信息，再结合用户问题作答。如果文字不完整或模糊，请先说明无法确定的部分，并提示用户调整距离、角度或光线。讲题时分步骤解释关键思路，避免只给答案。回答不要使用 markdown 格式。',
+    },
+  },
+  {
+    id: 'operation-guide',
+    name: '操作指导',
+    icon: '🛠️',
+    description: '根据画面指导步骤、排查问题和纠错。',
+    tone: '具体、一步一步',
+    settings: {
+      frameIntervalMs: 1800,
+      imageQuality: 0.88,
+      imageSize: 768,
+      summaryThresholdTokens: 8192,
+      systemPrompt:
+        '你是一个中文操作指导助手。请根据摄像头画面判断用户正在操作的物品、工具、界面或步骤，并给出下一步建议。回答时先确认你看到的关键状态，再给出一到三步具体指导；如果存在安全风险或画面不清楚，请先提醒用户暂停或换角度。不要使用 markdown 格式。',
+    },
+  },
+  {
     id: 'picture-book',
     name: '绘本陪读',
     icon: '📖',
