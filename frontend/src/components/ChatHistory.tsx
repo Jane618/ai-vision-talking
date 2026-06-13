@@ -20,8 +20,11 @@ function formatTime(ts: number): string {
 }
 
 /**
- * 气泡式对话历史：用户靠右、AI 靠左、system 灰底居中。
- * 实时识别的 interim 文本不再展示在此；改由输入框展示。
+ * 气泡式对话历史：
+ * - 用户消息靠右，紫色渐变
+ * - AI 消息靠左，机器人头像
+ * - 系统消息居中
+ * - 新消息滑入动画，支持"正在思考"状态
  */
 export function ChatHistory({ messages, isSending, onClear, onResetSession }: ChatHistoryProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -51,7 +54,12 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
       <div className="chat-history__list" ref={listRef}>
         {messages.length === 0 && (
           <div className="chat-history__empty">
-            说点什么开始对话吧。文字输入或点击麦克风语音输入都可以。
+            <span className="chat-history__empty-icon" aria-hidden="true">
+              💬
+            </span>
+            对摄像头说点什么，开始对话吧。
+            <br />
+            也可以直接在下方输入框输入文字。
           </div>
         )}
         {messages.map((m) => {
@@ -81,8 +89,8 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
         })}
         {isSending && (
           <div className="bubble-row bubble-row--left">
-            <div className="bubble bubble--assistant bubble--thinking">
-              <span className="bubble__text">正在思考…</span>
+            <div className="bubble bubble--thinking">
+              <span className="bubble__text">正在思考</span>
             </div>
           </div>
         )}
