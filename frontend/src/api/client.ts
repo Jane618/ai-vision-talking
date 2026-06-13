@@ -139,19 +139,28 @@ export function base64ToAudioBlob(base64: string, mimeType = 'audio/wav'): Blob 
   return new Blob([byteNumbers], { type: mimeType });
 }
 
-/** 浏览器 TTS 回退：无需任何后端音频即可朗读文本。 */
-export function speakWithBrowserTTS(text: string, lang = 'zh-CN'): void {
-  try {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang;
-    u.rate = 1;
-    u.pitch = 1;
-    window.speechSynthesis.speak(u);
-  } catch {
-    /* ignore */
-  }
+/** 浏览器 TTS 回退：无需任何后端音频即可朗读文本。
+ *  返回一个 Promise，朗读完成/中断/出错时 resolve，方便外部 await 统一管理状态。
+ */
+export function speakWithBrowserTTS(text: string, lang = 'zh-CN'): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      if (!('speechSynthesis' in window)) {
+        resolve();
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang;
+      u.rate = 1;
+      u.pitch = 1;
+      u.onend = () => resolve();
+      u.onerror = () => resolve();
+      window.speechSynthesis.speak(u);
+    } catch {
+      resolve();
+    }
+  });
 }
 
 /**

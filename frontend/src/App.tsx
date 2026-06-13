@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatHistory } from './components/ChatHistory';
 import { CostStats } from './components/CostStats';
 import { SettingsPanel } from './components/SettingsPanel';
+import { ThemeToggle } from './components/ThemeToggle';
 import { VideoPreview } from './components/VideoPreview';
 import { useASR } from './hooks/useASR';
 import { useCamera } from './hooks/useCamera';
@@ -182,7 +183,10 @@ export default function App() {
     <div className="app">
       <header className="app__header">
         <h1 className="app__title">AI Talking · 多模态语音对话</h1>
-        <span className="hint">摄像头 + 语音 + 文本 → 多模态模型</span>
+        <div className="app__header-right">
+          <span className="hint">摄像头 + 语音 + 文本 → 多模态模型</span>
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="app__grid">

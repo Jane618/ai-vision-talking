@@ -44,8 +44,9 @@ function uid() {
 }
 
 /**
- * 用 Capacitor 原生 TTS 朗读。失败时回退到浏览器 TTS；
- * 若浏览器 TTS 也不可用，静默返回而不影响对话流程。
+ * 用 Capacitor 原生 TTS 朗读，返回 Promise。
+ * 失败或没有原生 TTS 时回退到浏览器 TTS。
+ * 无论哪条路径，都会在播报完成后 resolve。
  */
 async function speakNativeOrFallback(text: string, lang = 'zh-CN'): Promise<void> {
   if (isCapacitor()) {
@@ -59,7 +60,7 @@ async function speakNativeOrFallback(text: string, lang = 'zh-CN'): Promise<void
       }
     }
   }
-  speakWithBrowserTTS(text, lang);
+  await speakWithBrowserTTS(text, lang);
 }
 
 export function useConversation(options: UseConversationOptions): UseConversationResult {
@@ -73,35 +74,77 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   const [cost, setCost] = useState<CostInfo>(DEFAULT_COST);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // 记录当前播放的 onended 处理器，便于在组件卸载前清理
+  const audioEndHandlerRef = useRef<(() => void) | null>(null);
 
-  // 监听浏览器 TTS speaking 状态，同步 isSpeaking
+  // 组件挂载：创建 <audio> 元素用于播放后端返回的 base64 音频
   useEffect(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    const interval = window.setInterval(() => {
-      const ttsSpeaking = window.speechSynthesis?.speaking ?? false;
-      setIsSpeaking((prev) => prev || ttsSpeaking);
-    }, 300);
-    return () => window.clearInterval(interval);
-  }, []);
-
-  const playAudio = useCallback(async (base64: string, mimeType?: string) => {
-    try {
-      const blob = base64ToAudioBlob(base64, mimeType || 'audio/wav');
-      const url = URL.createObjectURL(blob);
-      if (audioRef.current && audioRef.current.src) {
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audioRef.current = audio;
+    return () => {
+      // 卸载时清理：停止任何正在播放的内容
+      try {
+        audio.pause();
+        audio.src = '';
+      } catch {
+        /* ignore */
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         try {
-          URL.revokeObjectURL(audioRef.current.src);
+          window.speechSynthesis.cancel();
         } catch {
           /* ignore */
         }
       }
-      if (audioRef.current) {
-        audioRef.current.src = url;
-        await audioRef.current.play().catch(() => undefined);
+      setIsSpeaking(false);
+    };
+  }, []);
+
+  /**
+   * 播放 base64 音频（来自后端的 TTS 产物）。
+   * 调用方会在调用前 setIsSpeaking(true)；本函数在 ended/error 事件后 resolve。
+   */
+  const playAudio = useCallback(async (base64: string, mimeType?: string): Promise<void> => {
+    return new Promise((resolve) => {
+      try {
+        const blob = base64ToAudioBlob(base64, mimeType || 'audio/wav');
+        const url = URL.createObjectURL(blob);
+        const audio = audioRef.current;
+        if (!audio) {
+          resolve();
+          return;
+        }
+        // 清理上一次的旧监听
+        if (audioEndHandlerRef.current) {
+          audio.removeEventListener('ended', audioEndHandlerRef.current);
+          audio.removeEventListener('error', audioEndHandlerRef.current);
+        }
+        const onDone = () => {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {
+            /* ignore */
+          }
+          audio.removeEventListener('ended', onDone);
+          audio.removeEventListener('error', onDone);
+          if (audioEndHandlerRef.current === onDone) {
+            audioEndHandlerRef.current = null;
+          }
+          resolve();
+        };
+        audioEndHandlerRef.current = onDone;
+        audio.addEventListener('ended', onDone, { once: true });
+        audio.addEventListener('error', onDone, { once: true });
+        audio.src = url;
+        audio.play().catch(() => {
+          // 自动播放被拦截，直接视为完成
+          onDone();
+        });
+      } catch {
+        resolve();
       }
-    } catch {
-      /* ignore */
-    }
+    });
   }, []);
 
   const sendMessage = useCallback(
@@ -144,6 +187,8 @@ export function useConversation(options: UseConversationOptions): UseConversatio
           ts: Date.now(),
         };
         setMessages((prev) => [...prev, aiMsg]);
+        // 收到 AI 回复后立即结束"正在思考"状态（与音频播报解耦）
+        setIsSending(false);
 
         if (response.cost) {
           setCost({
@@ -155,24 +200,26 @@ export function useConversation(options: UseConversationOptions): UseConversatio
           });
         }
 
-        if (!aiReply) {
-          // nothing to speak
-        } else if (isCapacitor()) {
-          // 手机端：优先原生 TTS
+        // 播报逻辑：统一 before-setIsSpeaking(true) / after-setIsSpeaking(false)
+        if (aiReply) {
           setIsSpeaking(true);
-          await speakNativeOrFallback(aiReply);
-          // 安全超时：30 秒后若仍然 speaking，自动复位
-          window.setTimeout(() => {
-            setIsSpeaking((s) => (s ? false : s));
-          }, 30000);
-        } else if (response.audioBase64) {
-          await playAudio(response.audioBase64, response.audioMimeType || undefined);
-        } else {
-          speakWithBrowserTTS(aiReply);
+          try {
+            if (isCapacitor()) {
+              await speakNativeOrFallback(aiReply);
+            } else if (response.audioBase64) {
+              await playAudio(response.audioBase64, response.audioMimeType || undefined);
+            } else {
+              await speakWithBrowserTTS(aiReply);
+            }
+          } finally {
+            // 无论正常完成还是抛错，都重置状态
+            setIsSpeaking(false);
+          }
         }
       } catch (err) {
         const message = (err as Error)?.message || '请求失败';
         setError(message);
+        setIsSending(false); // 出错时也结束"正在思考"状态
         setMessages((prev) => [
           ...prev,
           {
@@ -183,7 +230,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
           },
         ]);
       } finally {
-        setIsSending(false);
+        // 注意：isSending 已在上面两个分支提前 reset，这里不再重复设置
       }
     },
     [sessionId, settings, getCurrentFrame, playAudio],
