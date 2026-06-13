@@ -45,6 +45,28 @@ function uid() {
   return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function splitSpeakableSentences(
+  text: string,
+  flush = false,
+): { sentences: string[]; rest: string } {
+  const sentences: string[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if ('。！？!?；;\n'.includes(text[i])) {
+      const sentence = text.slice(start, i + 1).trim();
+      if (sentence) sentences.push(sentence);
+      start = i + 1;
+    }
+  }
+
+  let rest = text.slice(start);
+  if (flush && rest.trim()) {
+    sentences.push(rest.trim());
+    rest = '';
+  }
+  return { sentences, rest };
+}
+
 /**
  * 用 Capacitor 原生 TTS 朗读，返回 Promise。
  * 失败或没有原生 TTS 时回退到浏览器 TTS。
@@ -79,6 +101,10 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // 记录当前播放的 onended 处理器，便于在组件卸载前清理
   const audioEndHandlerRef = useRef<(() => void) | null>(null);
+  const speechQueueRef = useRef<string[]>([]);
+  const speechBufferRef = useRef('');
+  const speechPlayingRef = useRef(false);
+  const speechRunIdRef = useRef(0);
 
   // 组件挂载：创建 <audio> 元素用于播放后端返回的 base64 音频
   useEffect(() => {
@@ -150,6 +176,45 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     });
   }, []);
 
+  const processSpeechQueue = useCallback(async () => {
+    if (speechPlayingRef.current) return;
+
+    const runId = speechRunIdRef.current;
+    speechPlayingRef.current = true;
+    setIsSpeaking(true);
+
+    try {
+      while (speechRunIdRef.current === runId) {
+        const next = speechQueueRef.current.shift();
+        if (!next) break;
+        await speakNativeOrFallback(next);
+      }
+    } finally {
+      if (speechRunIdRef.current === runId) {
+        speechPlayingRef.current = false;
+        setIsSpeaking(false);
+      }
+    }
+  }, []);
+
+  const enqueueSpeechText = useCallback(
+    (text: string, flush = false) => {
+      if (!text && !flush) return;
+
+      const { sentences, rest } = splitSpeakableSentences(
+        speechBufferRef.current + text,
+        flush,
+      );
+      speechBufferRef.current = rest;
+
+      if (sentences.length > 0) {
+        speechQueueRef.current.push(...sentences);
+        void processSpeechQueue();
+      }
+    },
+    [processSpeechQueue],
+  );
+
   const sendMessage = useCallback(
     async (userText: string, image?: string) => {
       const text = (userText || '').trim();
@@ -205,6 +270,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
             },
             onDelta: (delta) => {
               streamedReply += delta;
+              enqueueSpeechText(delta);
               if (!aiMessageStarted) {
                 aiMessageStarted = true;
                 const aiMsg: ConversationMessage = {
@@ -235,6 +301,11 @@ export function useConversation(options: UseConversationOptions): UseConversatio
           ? response.usage.completion_tokens || response.usage.total_tokens
           : Math.ceil(aiReply.length / 1.8);
         const finalReply = aiReply || streamedReply;
+        if (!streamedReply && finalReply) {
+          enqueueSpeechText(finalReply, true);
+        } else {
+          enqueueSpeechText('', true);
+        }
         setMessages((prev) => {
           if (prev.some((m) => m.id === aiMsgId)) {
             return prev.map((m) =>
@@ -289,22 +360,6 @@ export function useConversation(options: UseConversationOptions): UseConversatio
           });
         }
 
-        // 播报逻辑：统一 before-setIsSpeaking(true) / after-setIsSpeaking(false)
-        if (finalReply) {
-          setIsSpeaking(true);
-          try {
-            if (isCapacitor()) {
-              await speakNativeOrFallback(finalReply);
-            } else if (response.audioBase64) {
-              await playAudio(response.audioBase64, response.audioMimeType || undefined);
-            } else {
-              await speakWithBrowserTTS(finalReply);
-            }
-          } finally {
-            // 无论成功还是抛错，都重置状态
-            setIsSpeaking(false);
-          }
-        }
       } catch (err) {
         const message = (err as Error)?.message || '请求失败';
         setError(message);
@@ -323,7 +378,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         // 注意：isSending 已在上面两个分支提前 reset，这里不再重复设置
       }
     },
-    [sessionId, settings, getCurrentFrame, playAudio],
+    [sessionId, settings, getCurrentFrame, enqueueSpeechText],
   );
 
   const clearMessages = useCallback(() => {
@@ -332,6 +387,10 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   }, []);
 
   const stopSpeaking = useCallback(() => {
+    speechRunIdRef.current += 1;
+    speechQueueRef.current = [];
+    speechBufferRef.current = '';
+    speechPlayingRef.current = false;
     stopSpeakingCore(audioRef.current);
     setIsSpeaking(false);
   }, []);
@@ -345,6 +404,12 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     setCost(DEFAULT_COST);
     setIsSending(false);
     setIsInputLocked(false);
+    speechRunIdRef.current += 1;
+    speechQueueRef.current = [];
+    speechBufferRef.current = '';
+    speechPlayingRef.current = false;
+    stopSpeakingCore(audioRef.current);
+    setIsSpeaking(false);
   }, [sessionId]);
 
   return {
