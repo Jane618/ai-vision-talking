@@ -30,6 +30,10 @@ export interface MultimodalRequest {
     enableTTS?: boolean;
     voiceType?: string;
     systemPrompt?: string;
+    /** 🆕 是否启用对话摘要（默认 true） */
+    enableSummary?: boolean;
+    /** 🆕 触发摘要的累计 tokens 阈值（默认 8192） */
+    summaryThresholdTokens?: number;
   };
 }
 
@@ -41,6 +45,29 @@ export interface CostInfo {
   totalTokens: number;
   /** 估算费用，单位：人民币元 */
   estimatedCostCNY: number;
+  /** 🆕 累计节省的 tokens */
+  savedTokens?: number;
+}
+
+/** 🆕 摘要结果（后端若触发了摘要会返回此字段） */
+export interface SummaryInfo {
+  summary: string;
+  replacedMessages: number;
+  savedTokens: number;
+  summaryTokens: number;
+  estimatedSavedCNY: number;
+}
+
+/** 🆕 本次 API 请求的 tokens 拆解 */
+export interface TokenBreakdownInfo {
+  systemPromptTokens: number;
+  historyTokens: number;
+  currentUserTokens: number;
+  imageTokens: number;
+  totalEstimated: number;
+  actualPromptTokens: number;
+  actualCompletionTokens: number;
+  actualTotalTokens: number;
 }
 
 /** 对应后端 MultimodalResponseBody */
@@ -57,6 +84,10 @@ export interface MultimodalResponse {
     total_tokens: number;
   };
   cost?: CostInfo;
+  /** 🆕 若本次调用触发了摘要，返回此字段 */
+  summaryApplied?: SummaryInfo;
+  /** 🆕 本次 API 请求的 tokens 拆解 */
+  tokenBreakdown?: TokenBreakdownInfo;
   error?: string;
 }
 
@@ -64,6 +95,10 @@ export interface MultimodalSettings {
   frameIntervalMs: number;
   imageQuality: number;
   imageSize: number;
+  /** 🆕 是否启用对话摘要（默认 true） */
+  enableSummary?: boolean;
+  /** 🆕 触发摘要的累计 tokens 阈值（默认 8192） */
+  summaryThresholdTokens?: number;
 }
 
 export interface ConversationMessage {
@@ -72,6 +107,8 @@ export interface ConversationMessage {
   content: string;
   ts: number;
   hasImage?: boolean;
+  /** 🆕 本条消息消耗/估算的 tokens（AI 为真实值，用户为估算） */
+  tokens?: number;
 }
 
 /** 生成一个简单的会话 ID：时间戳 + 随机串。 */

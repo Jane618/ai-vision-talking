@@ -10,7 +10,7 @@ interface CostStatsProps {
  * 字段名与 backend/src/types.ts 的 ConversationCost 保持一致。
  */
 export function CostStats({ cost, sessionId }: CostStatsProps) {
-  const { callCount, promptTokens, completionTokens, totalTokens, estimatedCostCNY } = cost;
+  const { callCount, promptTokens, completionTokens, totalTokens, estimatedCostCNY, savedTokens } = cost;
 
   return (
     <div className="card cost-stats">
@@ -35,6 +35,12 @@ export function CostStats({ cost, sessionId }: CostStatsProps) {
           <div className="stat__label">总 tokens</div>
           <div className="stat__value">{totalTokens}</div>
         </div>
+        {savedTokens && savedTokens > 0 ? (
+          <div className="stat stat--saved">
+            <div className="stat__label">已节省 tokens</div>
+            <div className="stat__value">−{savedTokens}</div>
+          </div>
+        ) : null}
         <div className="stat stat--highlight">
           <div className="stat__label">估算费用 (¥)</div>
           <div className="stat__value">¥{estimatedCostCNY.toFixed(4)}</div>

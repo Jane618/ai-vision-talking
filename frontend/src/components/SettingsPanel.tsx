@@ -13,6 +13,7 @@ interface SettingsPanelProps {
  */
 export function SettingsPanel({ settings, onChange, isRunning, onToggleRunning }: SettingsPanelProps) {
   const update = (patch: Partial<MultimodalSettings>) => onChange({ ...settings, ...patch });
+  const enableSummary = settings.enableSummary !== false;
 
   return (
     <div className="card settings-panel">
@@ -70,6 +71,47 @@ export function SettingsPanel({ settings, onChange, isRunning, onToggleRunning }
         />
         <span className="field__hint">最长边像素，保持画面比例缩放。</span>
       </div>
+
+      <div className="settings-panel__divider" />
+
+      {/* 🆕 对话摘要设置区 */}
+      <div className="settings-panel__header">
+        <span className="settings-panel__title">对话摘要</span>
+        <span className={`badge ${enableSummary ? 'badge--ok' : 'badge--off'}`}>
+          {enableSummary ? '已启用' : '已关闭'}
+        </span>
+      </div>
+
+      <label className="field field--switch">
+        <input
+          type="checkbox"
+          checked={enableSummary}
+          onChange={(e) => update({ enableSummary: e.target.checked })}
+        />
+        <span>
+          启用对话摘要 — 历史对话达到阈值时自动压缩为摘要，降低 token 消耗。
+        </span>
+      </label>
+
+      {enableSummary && (
+        <div className="field">
+          <label>
+            摘要触发阈值：
+            <strong>{(settings.summaryThresholdTokens || 8192).toLocaleString()} tokens</strong>
+          </label>
+          <input
+            type="range"
+            min={2048}
+            max={16384}
+            step={1024}
+            value={settings.summaryThresholdTokens || 8192}
+            onChange={(e) => update({ summaryThresholdTokens: Number(e.target.value) })}
+          />
+          <span className="field__hint">
+            2K ~ 16K tokens。阈值越小越频繁，更省 tokens；阈值越大越保留完整上下文。
+          </span>
+        </div>
+      )}
 
       <div className="settings-panel__actions">
         <button
