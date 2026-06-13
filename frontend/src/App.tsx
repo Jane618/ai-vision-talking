@@ -38,6 +38,7 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [inputText, setInputText] = useState('');
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
+  const [previewFrame, setPreviewFrame] = useState<string | null>(null);
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null);
 
   const { videoRef, isReady: cameraReady, error: cameraError, start: startCamera, stop: stopCamera } =
@@ -49,6 +50,13 @@ export default function App() {
   useEffect(() => {
     currentFrameRef.current = currentFrame;
   }, [currentFrame]);
+
+  useEffect(() => {
+    if (!cameraReady) {
+      setPreviewFrame(null);
+      setLastCapture(null);
+    }
+  }, [cameraReady]);
 
   const {
     messages,
@@ -104,12 +112,12 @@ export default function App() {
     [isSpeaking, stopSpeaking],
   );
 
-  // 运行中：按 frameIntervalMs 周期抽帧，并在有变化时更新 currentFrame
+  // 摄像头开启后持续抽帧：未传输时用于右下角缩略图测试；传输中才更新对话使用的 currentFrame。
   useEffect(() => {
-    if (!isRunning) return;
+    if (!cameraReady) return;
     const id = window.setInterval(async () => {
       const video = videoRef.current;
-      if (!video || !cameraReady) return;
+      if (!video) return;
       try {
         const result = await captureFrame(
           video,
@@ -119,10 +127,11 @@ export default function App() {
             adaptiveImageQuality: settings.adaptiveImageQuality,
             imageQualityMin: settings.imageQualityMin,
           },
-          prevImageDataRef.current,
+          isRunning ? prevImageDataRef.current : null,
         );
         const { base64, changed, imageData } = result;
-        if (changed) {
+        setPreviewFrame(base64);
+        if (isRunning && changed) {
           prevImageDataRef.current = imageData;
           setCurrentFrame(base64);
         }
@@ -194,7 +203,7 @@ export default function App() {
             isReady={cameraReady}
             error={cameraError}
             isRecording={isListening}
-            currentFrame={currentFrame}
+            currentFrame={previewFrame || currentFrame}
             cameraDisabled={!cameraReady}
             onToggleCamera={handleToggleCamera}
             settings={settings}

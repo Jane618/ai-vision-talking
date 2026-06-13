@@ -1,6 +1,6 @@
 /**
  * 视频抽帧：从 <video> 元素获取当前帧，压缩为 JPEG base64。
- * 并提供简单的帧差计算（降采样到 32x32），用于判定画面是否显著变化。
+ * 并提供细节敏感的帧差计算，用于判定画面是否显著变化。
  */
 
 export interface CaptureSettings {
@@ -40,7 +40,7 @@ export async function captureFrame(
   videoEl: HTMLVideoElement,
   settings: CaptureSettings,
   prevData?: ImageData | null,
-  changeThreshold = 8,
+  changeThreshold = 6,
 ): Promise<CaptureResult> {
   const { imageSize = 512, imageQuality = 0.8 } = settings;
 
@@ -76,24 +76,67 @@ export async function captureFrame(
 }
 
 /**
- * 计算两张 ImageData 的平均像素差：
- * - 每张图先缩放到 32x32
- * - 计算 (R+G+B)/3 灰度平均差
- * 便于感知"画面是否显著变化"。
+ * 计算两张 ImageData 的细节敏感帧差：
+ * - 每张图先缩放到 64x64，保留更多局部细节
+ * - 结合全局平均差、变化像素比例、边缘变化比例、局部块最大变化
+ * - 避免文字、小物体、手势等局部变化被全局平均值抹平
  */
 export function computeFrameDifference(
   currentData: ImageData,
   prevData: ImageData,
 ): number {
-  const a = downsample(currentData, 32, 32);
-  const b = downsample(prevData, 32, 32);
+  const size = 64;
+  const a = downsample(currentData, size, size);
+  const b = downsample(prevData, size, size);
   if (!a || !b || a.length !== b.length) return Infinity;
 
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) {
-    sum += Math.abs(a[i] - b[i]);
+  let diffSum = 0;
+  let changedPixels = 0;
+  let maxBlockDiff = 0;
+  const blockSize = 8;
+
+  for (let by = 0; by < size; by += blockSize) {
+    for (let bx = 0; bx < size; bx += blockSize) {
+      let blockDiff = 0;
+      let blockCount = 0;
+
+      for (let y = by; y < by + blockSize; y++) {
+        for (let x = bx; x < bx + blockSize; x++) {
+          const i = y * size + x;
+          const diff = Math.abs(a[i] - b[i]);
+          diffSum += diff;
+          blockDiff += diff;
+          blockCount++;
+          if (diff > 8) changedPixels++;
+        }
+      }
+
+      maxBlockDiff = Math.max(maxBlockDiff, blockDiff / blockCount);
+    }
   }
-  return sum / a.length; // 0 ~ 255 灰度差均值
+
+  let edgeChangedPixels = 0;
+  let edgeCount = 0;
+  for (let y = 1; y < size - 1; y++) {
+    for (let x = 1; x < size - 1; x++) {
+      const i = y * size + x;
+      const lapA = a[i - size] + a[i - 1] + a[i + 1] + a[i + size] - a[i] * 4;
+      const lapB = b[i - size] + b[i - 1] + b[i + 1] + b[i + size] - b[i] * 4;
+      if (Math.abs(lapA - lapB) > 14) edgeChangedPixels++;
+      edgeCount++;
+    }
+  }
+
+  const meanDiff = diffSum / a.length;
+  const changedRatio = changedPixels / a.length;
+  const edgeChangedRatio = edgeCount ? edgeChangedPixels / edgeCount : 0;
+
+  return (
+    meanDiff * 0.5 +
+    changedRatio * 35 +
+    edgeChangedRatio * 30 +
+    maxBlockDiff * 0.45
+  );
 }
 
 /**
