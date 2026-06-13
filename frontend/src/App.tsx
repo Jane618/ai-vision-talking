@@ -77,6 +77,7 @@ export default function App() {
   const {
     messages,
     isSending,
+    isInputLocked,
     isSpeaking,
     error: convError,
     cost,
@@ -166,6 +167,7 @@ export default function App() {
   };
 
   const handleToggleListening = () => {
+    if (isInputLocked) return;
     if (isListening) {
       stopASR();
       setInputText('');
@@ -231,13 +233,13 @@ export default function App() {
               value={inputText}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              disabled={isSending}
+              disabled={isInputLocked}
             />
             <button
               type="button"
               className={`btn btn--with-icon ${isListening ? 'btn--danger' : 'btn--primary'}`}
               onClick={handleToggleListening}
-              disabled={!asrSupported || isSending}
+              disabled={!asrSupported || isInputLocked}
               title={asrSupported ? '开启/关闭语音识别' : '当前浏览器不支持语音识别'}
             >
               <MicIcon className="btn__icon" />
@@ -254,7 +256,7 @@ export default function App() {
                 <span>停止播报</span>
               </button>
             )}
-            <button type="button" className="btn btn--primary" onClick={handleSend} disabled={isSending}>
+            <button type="button" className="btn btn--primary" onClick={handleSend} disabled={isInputLocked}>
               发送
             </button>
           </div>
