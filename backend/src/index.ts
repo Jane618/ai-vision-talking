@@ -30,6 +30,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import {
   callDoubao,
+  callDoubaoStream,
   normalizeImageDataUrl,
 } from './services/doubao';
 import { isTTSConfigured, synthesize } from './services/tts';
@@ -136,6 +137,127 @@ app.post('/api/clear', (req: Request, res: Response) => {
       ok: false,
       error: (err as Error).message || '未知错误',
     });
+  }
+});
+
+function writeSse(res: Response, event: string, data: unknown): void {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+/** 多模态对话（文本流式响应） */
+app.post('/api/multimodal/stream', async (req: Request, res: Response) => {
+  const body = (req.body || {}) as MultimodalRequestBody;
+
+  let sessionId = body.sessionId?.trim();
+  const userText = (body.userText || '').trim();
+  const image = body.image?.trim();
+  const settings = body.settings || {};
+
+  if (!sessionId) {
+    sessionId = uuidv4();
+    console.log(`[multimodal:stream] 客户端未传 sessionId，自动生成: ${sessionId}`);
+  }
+  if (!userText && !image) {
+    return res.status(400).json({
+      ok: false,
+      sessionId,
+      historyCount: 0,
+      error: 'userText 或 image 至少需要提供一项',
+    });
+  }
+
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  try {
+    const conv = getOrCreateSession(sessionId);
+    const imageDataUrl = image ? normalizeImageDataUrl(image) : undefined;
+
+    const summaryApplied = await summarizeIfNeeded(conv, settings, {
+      userText,
+      imageDataUrl,
+      systemPrompt: settings.systemPrompt,
+    });
+
+    if (summaryApplied) {
+      writeSse(res, 'summary', summaryApplied);
+    }
+
+    const messages = buildArkMessages({
+      conv,
+      userText,
+      imageDataUrl,
+      systemPrompt: settings.systemPrompt,
+    });
+
+    const { replyText, usage } = await callDoubaoStream(
+      messages,
+      settings,
+      (delta) => writeSse(res, 'delta', { text: delta }),
+    );
+    accumulateCost(conv, usage);
+
+    const tokenBreakdown = buildTokenBreakdown({
+      conv,
+      userText,
+      imageDataUrl,
+      usage,
+      systemPrompt: settings.systemPrompt,
+    });
+
+    if (imageDataUrl) {
+      appendHistory(conv, {
+        role: 'user',
+        content: [
+          { type: 'text', text: userText || '请描述你看到的画面。' },
+          { type: 'image_url', image_url: { url: imageDataUrl, detail: 'auto' } },
+        ],
+        hasImage: true,
+        timestamp: Date.now(),
+      });
+    } else {
+      appendHistory(conv, {
+        role: 'user',
+        content: userText,
+        hasImage: false,
+        timestamp: Date.now(),
+      });
+    }
+    appendHistory(conv, {
+      role: 'assistant',
+      content: replyText,
+      hasImage: false,
+      timestamp: Date.now(),
+    });
+
+    writeSse(res, 'done', {
+      ok: true,
+      replyText,
+      audioBase64: null,
+      audioMimeType: null,
+      sessionId,
+      historyCount: conv.history.length,
+      usage,
+      cost: snapshotCost(conv.cost),
+      summaryApplied,
+      tokenBreakdown,
+    });
+    res.end();
+  } catch (err) {
+    console.error('[multimodal:stream] 异常:', err);
+    const convRef = getOrCreateSession(sessionId);
+    writeSse(res, 'error', {
+      ok: false,
+      sessionId,
+      historyCount: convRef.history.length,
+      cost: snapshotCost(convRef.cost),
+      error: (err as Error).message || '未知错误',
+    });
+    res.end();
   }
 });
 

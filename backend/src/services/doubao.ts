@@ -100,6 +100,138 @@ export async function callDoubao(
   };
 }
 
+/**
+ * 流式调用豆包多模态 API。
+ *
+ * Ark 使用 OpenAI 兼容的 SSE 响应格式：
+ *   data: {"choices":[{"delta":{"content":"..."}}]}
+ *   data: [DONE]
+ */
+export async function callDoubaoStream(
+  messages: ArkChatMessage[],
+  settings: UserSettings | undefined,
+  onDelta: (text: string) => void,
+): Promise<DoubaoResponse> {
+  const apiKey = process.env.ARK_API_KEY;
+  const model = process.env.ARK_MODEL_ENDPOINT;
+
+  if (!apiKey || !model) {
+    throw new Error(
+      '未配置 ARK_API_KEY 或 ARK_MODEL_ENDPOINT，请检查 .env 文件。',
+    );
+  }
+
+  const temperature =
+    typeof settings?.temperature === 'number' ? settings.temperature : 0.7;
+  const maxTokens =
+    typeof settings?.maxTokens === 'number' ? settings.maxTokens : 512;
+
+  const body = {
+    model,
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+
+  console.log(
+    `[doubao] 流式调用 Ark API: model=${model}, messages=${messages.length}, temp=${temperature}, maxTokens=${maxTokens}`,
+  );
+
+  const resp = await fetch(ARK_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const rawText = await resp.text();
+    let detail: string = rawText;
+    try {
+      const j = JSON.parse(rawText);
+      detail = j?.error?.message || JSON.stringify(j);
+    } catch {
+      // ignore
+    }
+    throw new Error(`Ark API ${resp.status}: ${detail}`);
+  }
+
+  const stream = resp.body as unknown as NodeJS.ReadableStream | null;
+  if (!stream) {
+    throw new Error('Ark API 未返回可读取的流式响应。');
+  }
+
+  let buffer = '';
+  let replyText = '';
+  let usage: ArkUsage = {
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_tokens: 0,
+  };
+
+  function handleEventBlock(block: string): void {
+    const lines = block
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const dataLines = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim());
+
+    for (const dataText of dataLines) {
+      if (!dataText || dataText === '[DONE]') continue;
+      try {
+        const data = JSON.parse(dataText);
+        const delta = data?.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta) {
+          replyText += delta;
+          onDelta(delta);
+        }
+        if (data?.usage) {
+          usage = data.usage;
+        }
+      } catch (err) {
+        console.warn('[doubao] 解析流式响应片段失败:', (err as Error).message);
+      }
+    }
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    stream.on('data', (chunk: Buffer | string) => {
+      buffer += chunk.toString();
+      buffer = buffer.replace(/\r\n/g, '\n');
+
+      let sepIndex = buffer.indexOf('\n\n');
+      while (sepIndex >= 0) {
+        const block = buffer.slice(0, sepIndex).trim();
+        buffer = buffer.slice(sepIndex + 2);
+        if (block) handleEventBlock(block);
+        sepIndex = buffer.indexOf('\n\n');
+      }
+    });
+    stream.on('end', () => {
+      const tail = buffer.trim();
+      if (tail) handleEventBlock(tail);
+      resolve();
+    });
+    stream.on('error', reject);
+  });
+
+  console.log(
+    `[doubao] 流式完成: usage.prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}, replyLen=${replyText.length}`,
+  );
+
+  return {
+    replyText: replyText.trim(),
+    usage,
+    model,
+  };
+}
+
 /** 将原始 base64 图像规范化为 data:image/jpeg;base64,... 格式 */
 export function normalizeImageDataUrl(image: string): string {
   if (!image) return '';
