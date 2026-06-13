@@ -179,10 +179,10 @@ export async function summarizeIfNeeded(
   conv: Conversation,
   settings?: UserSettings,
 ): Promise<SummaryApplied | undefined> {
-  // const threshold =
-  //   typeof settings?.summaryThresholdTokens === 'number' && settings.summaryThresholdTokens > 0
-  //     ? settings.summaryThresholdTokens
-  //     : DEFAULT_SUMMARY_THRESHOLD_TOKENS;
+  const threshold =
+    typeof settings?.summaryThresholdTokens === 'number' && settings.summaryThresholdTokens > 0
+      ? settings.summaryThresholdTokens
+      : DEFAULT_SUMMARY_THRESHOLD_TOKENS;
 
   if (settings?.enableSummary === false) {
     return undefined;
@@ -193,17 +193,15 @@ export async function summarizeIfNeeded(
 
   // TODO(暂时注释 tokens 阈值触发条件):  测试阶段改用消息数触发，
   // 保留估算逻辑（仍需用于计算「节省了多少 tokens」），仅跳过阈值判断
-  // const historyTokens = estimateHistoryTokens(conv.history);
-  // if (historyTokens < threshold) {
-  //   return undefined;
-  // }
+  const historyTokens = estimateHistoryTokens(conv.history);
+  if (historyTokens < threshold) {
+    return undefined;
+  }
   const now = Date.now();
   if (conv.lastSummaryAt && now - conv.lastSummaryAt < SUMMARY_MIN_INTERVAL_MS) {
     return undefined;
   }
 
-  // 仍需要估算历史 tokens，用于计算本次摘要预计节省的 tokens
-  const historyTokens = estimateHistoryTokens(conv.history);
   return runSummary(conv, settings, historyTokens);
 }
 
