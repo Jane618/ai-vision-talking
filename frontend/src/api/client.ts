@@ -150,3 +150,25 @@ export function speakWithBrowserTTS(text: string, lang = 'zh-CN'): void {
     /* ignore */
   }
 }
+
+/**
+ * 立即停止任何正在播放的语音（包括浏览器 TTS、HTMLAudioElement）。
+ * 适合作为「手动中断播报」和「关键词中断播报」的统一入口。
+ */
+export function stopSpeaking(audioElement?: HTMLAudioElement | null): void {
+  try {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  } catch {
+    /* ignore */
+  }
+  if (audioElement) {
+    try {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+  }
+}

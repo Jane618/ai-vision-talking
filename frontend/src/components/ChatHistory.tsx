@@ -8,7 +8,6 @@ interface ChatHistoryProps {
     ts: number;
     hasImage?: boolean;
   }>;
-  interimText?: string;
   isSending?: boolean;
   onClear: () => void;
   onResetSession: () => void;
@@ -22,16 +21,16 @@ function formatTime(ts: number): string {
 
 /**
  * 气泡式对话历史：用户靠右、AI 靠左、system 灰底居中。
- * 顶部提供「清空对话」「重置会话」操作按钮，追加消息时自动滚动到底部。
+ * 实时识别的 interim 文本不再展示在此；改由输入框展示。
  */
-export function ChatHistory({ messages, interimText, isSending, onClear, onResetSession }: ChatHistoryProps) {
+export function ChatHistory({ messages, isSending, onClear, onResetSession }: ChatHistoryProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages, interimText, isSending]);
+  }, [messages, isSending]);
 
   return (
     <div className="card chat-history">
@@ -84,13 +83,6 @@ export function ChatHistory({ messages, interimText, isSending, onClear, onReset
           <div className="bubble-row bubble-row--left">
             <div className="bubble bubble--assistant bubble--thinking">
               <span className="bubble__text">正在思考…</span>
-            </div>
-          </div>
-        )}
-        {interimText && (
-          <div className="bubble-row bubble-row--right">
-            <div className="bubble bubble--interim">
-              <span className="bubble__text">{interimText}</span>
             </div>
           </div>
         )}
