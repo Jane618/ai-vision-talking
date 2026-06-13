@@ -46,6 +46,10 @@ export interface UserSettings {
   systemPrompt?: string;
   voiceType?: string;
   enableTTS?: boolean;
+  /** 是否启用对话摘要（默认 true） */
+  enableSummary?: boolean;
+  /** 触发摘要的历史累计 tokens 阈值（默认 8192） */
+  summaryThresholdTokens?: number;
 }
 
 /** 会话成本统计 */
@@ -56,6 +60,8 @@ export interface ConversationCost {
   totalTokens: number;
   /** 估算的费用（单位：元）基于粗略单价，仅供参考 */
   estimatedCostCNY: number;
+  /** 通过摘要累计节省的 tokens */
+  savedTokens: number;
 }
 
 /** 单条历史消息（存入内存） */
@@ -75,6 +81,42 @@ export interface Conversation {
   cost: ConversationCost;
   createdAt: number;
   lastActiveAt: number;
+  /** 最近一次摘要发生的时间（ms），用于避免频繁重复摘要 */
+  lastSummaryAt?: number;
+}
+
+/** 摘要结果：当一次调用触发了历史摘要时，会把这个对象返回给前端 */
+export interface SummaryApplied {
+  /** 摘要文本（系统会用此内容替换旧历史） */
+  summary: string;
+  /** 替换掉的消息条数（user + assistant 合计） */
+  replacedMessages: number;
+  /** 本轮摘要估算节省的 tokens（旧历史估算 tokens - 摘要自身 tokens） */
+  savedTokens: number;
+  /** 摘要调用自身花费的 tokens（计费） */
+  summaryTokens: number;
+  /** 估算节省费用（元），= savedTokens * 粗略单价 */
+  estimatedSavedCNY: number;
+}
+
+/** 🆕 本次 API 请求的 tokens 拆解（用于前端可视化） */
+export interface TokenBreakdown {
+  /** system prompt 估算 tokens */
+  systemPromptTokens: number;
+  /** 对话历史（user + assistant）估算 tokens */
+  historyTokens: number;
+  /** 当前用户消息（仅文本）估算 tokens */
+  currentUserTokens: number;
+  /** 图像部分估算 tokens（含图像时 > 0） */
+  imageTokens: number;
+  /** 以上估算之和 */
+  totalEstimated: number;
+  /** 豆包 API 实际返回的 prompt_tokens（真实值） */
+  actualPromptTokens: number;
+  /** 豆包 API 实际返回的 completion_tokens（真实值） */
+  actualCompletionTokens: number;
+  /** 豆包 API 实际返回的 total_tokens（真实值） */
+  actualTotalTokens: number;
 }
 
 /** /api/multimodal 请求体 */
@@ -98,6 +140,10 @@ export interface MultimodalResponseBody {
   historyCount: number;
   usage?: ArkUsage;
   cost?: ConversationCost;
+  /** 本次调用若触发了摘要，在此字段返回摘要详情 */
+  summaryApplied?: SummaryApplied;
+  /** 🆕 本次 API 请求的 tokens 拆解 */
+  tokenBreakdown?: TokenBreakdown;
   /** 错误信息（出现时 ok = false） */
   error?: string;
 }

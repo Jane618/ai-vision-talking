@@ -37,10 +37,12 @@ import {
   accumulateCost,
   appendHistory,
   buildArkMessages,
+  buildTokenBreakdown,
   clearSession,
   getOrCreateSession,
   getSessionCount,
   snapshotCost,
+  summarizeIfNeeded,
 } from './services/conversation';
 import type {
   ClearRequestBody,
@@ -165,6 +167,10 @@ app.post(
       const conv = getOrCreateSession(sessionId);
       const imageDataUrl = image ? normalizeImageDataUrl(image) : undefined;
 
+      // 🆕 先检查是否需要摘要（在构造 messages 之前，这样
+      // 构造的历史会是摘要替换后的）。
+      const summaryApplied = await summarizeIfNeeded(conv, settings);
+
       const messages = buildArkMessages({
         conv,
         userText,
@@ -174,6 +180,15 @@ app.post(
 
       const { replyText, usage } = await callDoubao(messages, settings);
       accumulateCost(conv, usage);
+
+      // 🆕 构建本次请求的 tokens 拆解（在 appendHistory 之前，基于调用时的历史）
+      const tokenBreakdown = buildTokenBreakdown({
+        conv,
+        userText,
+        imageDataUrl,
+        usage,
+        systemPrompt: settings.systemPrompt,
+      });
 
       if (imageDataUrl) {
         appendHistory(conv, {
@@ -221,6 +236,8 @@ app.post(
         historyCount: conv.history.length,
         usage,
         cost: snapshotCost(conv.cost),
+        summaryApplied,
+        tokenBreakdown,
       });
     } catch (err) {
       console.error('[multimodal] 异常:', err);

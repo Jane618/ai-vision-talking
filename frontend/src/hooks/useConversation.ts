@@ -37,6 +37,7 @@ const DEFAULT_COST: CostInfo = {
   completionTokens: 0,
   totalTokens: 0,
   estimatedCostCNY: 0,
+  savedTokens: 0,
 };
 
 function uid() {
@@ -102,7 +103,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   }, []);
 
   /**
-   * 播放 base64 音频（来自后端的 TTS 产物）。
+   * 播放 base64 音频（来自后端 TTS 产物）。
    * 调用方会在调用前 setIsSpeaking(true)；本函数在 ended/error 事件后 resolve。
    */
   const playAudio = useCallback(async (base64: string, mimeType?: string): Promise<void> => {
@@ -152,12 +153,16 @@ export function useConversation(options: UseConversationOptions): UseConversatio
       const text = (userText || '').trim();
       if (!text) return;
 
+      // 估算用户消息的 tokens：文字 1.8 字/token，有画面额外估算 200 tokens
+      const userMsgTokens =
+        Math.ceil(text.length / 1.8) + (image ? 200 : 0);
       const userMsg: ConversationMessage = {
         id: uid(),
         role: 'user',
         content: text,
         ts: Date.now(),
         hasImage: !!image,
+        tokens: userMsgTokens,
       };
       setMessages((prev) => [...prev, userMsg]);
 
@@ -176,15 +181,55 @@ export function useConversation(options: UseConversationOptions): UseConversatio
             imageQuality: settings.imageQuality,
             imageSize: settings.imageSize,
             enableTTS: true,
+            enableSummary: settings.enableSummary !== false,
+            summaryThresholdTokens: settings.summaryThresholdTokens || 8192,
           },
         });
 
+        // 🆕 若本次调用触发了摘要，在对话历史中插入一条系统提示消息
+        if (response.summaryApplied) {
+          const summary = response.summaryApplied;
+          const savedYuan = (summary.estimatedSavedCNY || 0).toFixed(4);
+          const summaryMsg: ConversationMessage = {
+            id: uid(),
+            role: 'system',
+            content: `📝 已对之前 ${summary.replacedMessages} 条对话做摘要：\n${summary.summary}\n（节省 ${summary.savedTokens} tokens · 节省 ¥${savedYuan}）`,
+            ts: Date.now(),
+          };
+          setMessages((prev) => [...prev, summaryMsg]);
+        }
+
+        // 🆕 本次 API 请求的 tokens 拆解（系统消息，便于调试和感知成本）
+        if (response.tokenBreakdown) {
+          const tb = response.tokenBreakdown;
+          const parts: string[] = [];
+          parts.push(`system ${tb.systemPromptTokens}`);
+          parts.push(`历史 ${tb.historyTokens}`);
+          parts.push(`当前 ${tb.currentUserTokens}`);
+          if (tb.imageTokens > 0) parts.push(`图像 ${tb.imageTokens}`);
+          const estSum = parts.join(' + ');
+          const tokenMsg: ConversationMessage = {
+            id: uid(),
+            role: 'system',
+            content:
+              `📊 本次 prompt: ${tb.actualPromptTokens} tokens（估算 ${estSum}）\n` +
+              `   AI 回复: ${tb.actualCompletionTokens} tokens · 合计 ${tb.actualTotalTokens} tokens`,
+            ts: Date.now(),
+          };
+          setMessages((prev) => [...prev, tokenMsg]);
+        }
+
         const aiReply = response.replyText || '';
+        // AI 消息的 tokens：使用豆包 API 本次调用返回的 completion_tokens（或 total_tokens 作为兜底）
+        const aiMsgTokens = response.usage
+          ? response.usage.completion_tokens || response.usage.total_tokens
+          : Math.ceil(aiReply.length / 1.8);
         const aiMsg: ConversationMessage = {
           id: uid(),
           role: 'assistant',
           content: aiReply,
           ts: Date.now(),
+          tokens: aiMsgTokens,
         };
         setMessages((prev) => [...prev, aiMsg]);
         // 收到 AI 回复后立即结束"正在思考"状态（与音频播报解耦）
@@ -197,6 +242,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
             completionTokens: response.cost.completionTokens,
             totalTokens: response.cost.totalTokens,
             estimatedCostCNY: response.cost.estimatedCostCNY,
+            savedTokens: response.cost.savedTokens || 0,
           });
         }
 
@@ -212,7 +258,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
               await speakWithBrowserTTS(aiReply);
             }
           } finally {
-            // 无论正常完成还是抛错，都重置状态
+            // 无论成功还是抛错，都重置状态
             setIsSpeaking(false);
           }
         }

@@ -1,13 +1,8 @@
 import { useEffect, useRef } from 'react';
+import type { ConversationMessage } from '../api/client';
 
 interface ChatHistoryProps {
-  messages: Array<{
-    id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    ts: number;
-    hasImage?: boolean;
-  }>;
+  messages: ConversationMessage[];
   isSending?: boolean;
   onClear: () => void;
   onResetSession: () => void;
@@ -81,6 +76,11 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
                   <span>{isUser ? '你' : 'AI'}</span>
                   <span className="bubble__time">{formatTime(m.ts)}</span>
                   {m.hasImage && <span className="bubble__tag">含画面</span>}
+                  {m.tokens && m.tokens > 0 && (
+                    <span className="bubble__tag bubble__tag--tokens">
+                      {isUser ? '≈ ' : ''}{m.tokens} tokens
+                    </span>
+                  )}
                 </div>
                 <span className="bubble__text">{m.content}</span>
               </div>
