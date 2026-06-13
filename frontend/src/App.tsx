@@ -75,6 +75,36 @@ export default function App() {
     getCurrentFrame: () => currentFrameRef.current || undefined,
   });
 
+  const captureLatestFrameForSend = useCallback(async (): Promise<string | undefined> => {
+    const video = videoRef.current;
+    if (!cameraReady || !video) {
+      return currentFrameRef.current || undefined;
+    }
+
+    try {
+      const result = await captureFrame(
+        video,
+        {
+          imageSize: settings.imageSize,
+          imageQuality: settings.imageQuality,
+          adaptiveImageQuality: settings.adaptiveImageQuality,
+          imageQualityMin: settings.imageQualityMin,
+        },
+        null,
+      );
+
+      prevImageDataRef.current = result.imageData;
+      currentFrameRef.current = result.base64;
+      setCurrentFrame(result.base64);
+      setPreviewFrame(result.base64);
+      setLastCapture(result);
+
+      return result.base64;
+    } catch {
+      return currentFrameRef.current || undefined;
+    }
+  }, [cameraReady, settings, videoRef]);
+
   // 语音识别：静音结束 -> 直接发送
   const {
     start: startASR,
@@ -90,8 +120,10 @@ export default function App() {
         stopSpeaking();
         return;
       }
-      const frameForSend = currentFrameRef.current || undefined;
-      sendMessage(text, frameForSend);
+      void (async () => {
+        const frameForSend = await captureLatestFrameForSend();
+        await sendMessage(text, frameForSend);
+      })();
     },
   });
 
@@ -146,10 +178,10 @@ export default function App() {
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text) return;
-    const frameForSend = currentFrameRef.current || undefined;
     setInputText('');
+    const frameForSend = await captureLatestFrameForSend();
     await sendMessage(text, frameForSend);
-  }, [inputText, sendMessage]);
+  }, [captureLatestFrameForSend, inputText, sendMessage]);
 
   const handleToggleRunning = () => {
     setIsRunning((v) => !v);
