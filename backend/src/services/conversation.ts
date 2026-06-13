@@ -169,15 +169,18 @@ export function accumulateCost(conv: Conversation, usage: ArkUsage): void {
  * 判断是否需要摘要，并执行摘要（返回摘要详情）
  * 触发条件：
  *   1) settings.enableSummary !== false
- *   2) 历史消息数 >= MIN_MESSAGES_FOR_SUMMARY（当前设置：每 6 条消息触发一次）
+ *   2) 历史消息数 >= MIN_MESSAGES_FOR_SUMMARY（太少消息不够做有效摘要）
  *   3) 与上次摘要的时间间隔 >= SUMMARY_MIN_INTERVAL_MS
- *
- * TODO(暂时注释 tokens 阈值):  原逻辑按累计 tokens 触发，
- * 测试阶段改为按消息数触发，便于验证摘要流程。
+ *   4) system prompt + 历史 + 本次用户输入 + 图片估算 tokens >= 用户阈值
  */
 export async function summarizeIfNeeded(
   conv: Conversation,
   settings?: UserSettings,
+  current?: {
+    userText?: string;
+    imageDataUrl?: string;
+    systemPrompt?: string;
+  },
 ): Promise<SummaryApplied | undefined> {
   const threshold =
     typeof settings?.summaryThresholdTokens === 'number' && settings.summaryThresholdTokens > 0
@@ -191,16 +194,25 @@ export async function summarizeIfNeeded(
     return undefined;
   }
 
-  // TODO(暂时注释 tokens 阈值触发条件):  测试阶段改用消息数触发，
-  // 保留估算逻辑（仍需用于计算「节省了多少 tokens」），仅跳过阈值判断
+  const systemContent = (current?.systemPrompt || getDefaultSystemPrompt()).trim();
+  const systemPromptTokens = Math.ceil(systemContent.length / CHARS_PER_TOKEN);
   const historyTokens = estimateHistoryTokens(conv.history);
-  if (historyTokens < threshold) {
+  const currentUserTokens = Math.ceil((current?.userText || '').length / CHARS_PER_TOKEN);
+  const imageTokens = current?.imageDataUrl ? 200 : 0;
+  const estimatedPromptTokens =
+    systemPromptTokens + historyTokens + currentUserTokens + imageTokens;
+
+  if (estimatedPromptTokens < threshold) {
     return undefined;
   }
   const now = Date.now();
   if (conv.lastSummaryAt && now - conv.lastSummaryAt < SUMMARY_MIN_INTERVAL_MS) {
     return undefined;
   }
+
+  console.log(
+    `[conversation] 会话 ${conv.sessionId}: 预计 prompt ${estimatedPromptTokens} tokens >= 阈值 ${threshold}，准备摘要`,
+  );
 
   return runSummary(conv, settings, historyTokens);
 }

@@ -120,6 +120,16 @@ export default function App() {
     }
   }, [interimText, isListening]);
 
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (isSpeaking) {
+        stopSpeaking();
+      }
+      setInputText(e.target.value);
+    },
+    [isSpeaking, stopSpeaking],
+  );
+
   // 运行中：按 frameIntervalMs 周期抽帧，并在有变化时更新 currentFrame
   useEffect(() => {
     if (!isRunning) return;
@@ -160,6 +170,9 @@ export default function App() {
       stopASR();
       setInputText('');
     } else {
+      if (isSpeaking) {
+        stopSpeaking();
+      }
       startASR();
     }
   };
@@ -216,7 +229,7 @@ export default function App() {
               className="input"
               placeholder="输入消息后按 Enter 发送，或点击右侧「语音输入」"
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               disabled={isSending}
             />
