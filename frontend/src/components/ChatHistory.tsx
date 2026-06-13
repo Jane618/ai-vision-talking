@@ -47,6 +47,8 @@ export function ChatHistory({
   input,
 }: ChatHistoryProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const summaryPanelRef = useRef<HTMLDivElement>(null);
+  const summaryToggleRef = useRef<HTMLButtonElement>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
   const update = (patch: Partial<MultimodalSettings>) => onSettingsChange({ ...settings, ...patch });
@@ -58,6 +60,21 @@ export function ChatHistory({
     el.scrollTop = el.scrollHeight;
   }, [messages, isSending]);
 
+  useEffect(() => {
+    if (!summaryOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (summaryPanelRef.current?.contains(target)) return;
+      if (summaryToggleRef.current?.contains(target)) return;
+      setSummaryOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [summaryOpen]);
+
   return (
     <div className="card chat-history chat-history--with-input">
       <div className="chat-history__header">
@@ -65,6 +82,7 @@ export function ChatHistory({
           <span className="chat-history__title">对话</span>
           <span className="chat-history__count">{messages.length} 条</span>
           <button
+            ref={summaryToggleRef}
             type="button"
             className={`btn btn--ghost btn--sm expand-toggle ${summaryOpen ? 'expand-toggle--on' : ''}`}
             onClick={() => setSummaryOpen((v) => !v)}
@@ -85,6 +103,7 @@ export function ChatHistory({
       </div>
 
       <div
+        ref={summaryPanelRef}
         id="summary-panel"
         className={`expand-panel expand-panel--compact ${summaryOpen ? 'expand-panel--open' : ''}`}
         hidden={!summaryOpen}

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MultimodalSettings } from '../api/client';
 import { SCENE_PRESETS } from '../presets/scenePresets';
+import { QUALITY_MODE_PRESETS } from '../presets/qualityModes';
 import type { CaptureResult } from '../video/frameSampler';
 
 interface VideoPreviewProps {
@@ -20,9 +21,10 @@ interface VideoPreviewProps {
 
 /**
  * 左侧视频预览模块：
- * - 顶部：标题 + 录音/就绪指示 + 「设置」按钮（点击展开画面设置 + 场景预设）
+ * - 顶部：标题 + 录音/就绪指示 + 「画面设置」按钮
  * - 中部：摄像头画面 + 右下角抽帧缩略图
- * - 可展开区：画面设置（抽帧频率/画质/分辨率）+ 场景预设
+ * - 底部：摄像头/传输控制 + 预算质量和场景下拉选择
+ * - 可展开区：图像参数设置
  */
 export function VideoPreview({
   videoRef,
@@ -38,8 +40,19 @@ export function VideoPreview({
   onToggleRunning,
   lastCapture,
 }: VideoPreviewProps) {
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
+  const settingsToggleRef = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const update = (patch: Partial<MultimodalSettings>) => onSettingsChange({ ...settings, ...patch });
+  const applyQualityMode = (modeId: NonNullable<MultimodalSettings['qualityMode']>) => {
+    const mode = QUALITY_MODE_PRESETS.find((item) => item.id === modeId);
+    if (!mode) return;
+    onSettingsChange({
+      ...settings,
+      ...mode.settings,
+      qualityMode: mode.id,
+    });
+  };
   const adaptiveEnabled = settings.adaptiveImageQuality !== false;
   const qualityMin = settings.imageQualityMin ?? Math.max(0.3, settings.imageQuality - 0.35);
   const complexityLabel =
@@ -60,12 +73,28 @@ export function VideoPreview({
     });
   };
 
+  useEffect(() => {
+    if (!settingsOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (settingsPanelRef.current?.contains(target)) return;
+      if (settingsToggleRef.current?.contains(target)) return;
+      setSettingsOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [settingsOpen]);
+
   return (
     <div className="card video-preview video-preview--with-panel">
       <div className="video-preview__header">
         <div className="video-preview__title-left">
           <span className="video-preview__title">摄像头</span>
           <button
+            ref={settingsToggleRef}
             type="button"
             className={`btn btn--ghost btn--sm expand-toggle ${settingsOpen ? 'expand-toggle--on' : ''}`}
             onClick={() => setSettingsOpen((v) => !v)}
@@ -119,48 +148,58 @@ export function VideoPreview({
           >
             {isRunning ? '暂停传输' : '开始传输画面'}
           </button>
+          <label className="transport-select-field">
+            <span>质量</span>
+            <select
+              className="transport-select"
+              value={settings.qualityMode ?? 'balanced'}
+              onChange={(event) =>
+                applyQualityMode(event.target.value as NonNullable<MultimodalSettings['qualityMode']>)
+              }
+            >
+              {QUALITY_MODE_PRESETS.map((mode) => (
+                <option key={mode.id} value={mode.id}>
+                  {mode.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="transport-select-field">
+            <span>场景</span>
+            <select
+              className="transport-select"
+              value={settings.scenePresetId ?? SCENE_PRESETS[0]?.id}
+              onChange={(event) => applyPreset(event.target.value)}
+            >
+              {SCENE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.icon} {preset.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <span className="hint">画面变化时自动抽取并发送给多模态模型。</span>
       </div>
 
       <div
+        ref={settingsPanelRef}
         id="video-settings-panel"
         className={`expand-panel ${settingsOpen ? 'expand-panel--open' : ''}`}
         hidden={!settingsOpen}
       >
-        {/* —— 场景预设 —— */}
-        <div className="expand-panel__section">
-          <div className="expand-panel__section-title">场景预设</div>
-          <div className="preset-grid">
-            {SCENE_PRESETS.map((preset) => {
-              const active = settings.scenePresetId === preset.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`preset-card ${active ? 'preset-card--active' : ''}`}
-                  onClick={() => applyPreset(preset.id)}
-                  aria-pressed={active}
-                >
-                  <span className="preset-card__icon" aria-hidden="true">
-                    {preset.icon}
-                  </span>
-                  <span className="preset-card__body">
-                    <span className="preset-card__title">{preset.name}</span>
-                    <span className="preset-card__desc">{preset.description}</span>
-                    <span className="preset-card__tone">{preset.tone}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="expand-panel__divider" />
-
         {/* —— 画面设置 —— */}
         <div className="expand-panel__section">
           <div className="expand-panel__section-title">画面设置</div>
+          <label className="setting-row setting-row--checkbox">
+            <span>图片智能自适应质量</span>
+            <input
+              type="checkbox"
+              checked={adaptiveEnabled}
+              onChange={(e) => update({ adaptiveImageQuality: e.target.checked })}
+            />
+          </label>
+
           <div className="field">
             <label>
               抽帧频率：
@@ -202,15 +241,6 @@ export function VideoPreview({
                 : '0.3 低画质省流量 / 1.0 最高画质。'}
             </span>
           </div>
-
-          <label className="field field--switch">
-            <input
-              type="checkbox"
-              checked={adaptiveEnabled}
-              onChange={(e) => update({ adaptiveImageQuality: e.target.checked })}
-            />
-            <span>智能自适应质量 — 根据画面复杂度自动调整 JPEG quality，降低图片 token 成本。</span>
-          </label>
 
           {adaptiveEnabled && (
             <>

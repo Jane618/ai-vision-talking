@@ -45,26 +45,71 @@ function uid() {
   return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const SPEECH_BOUNDARY_CHARS = '。！？!?；;\n';
+const SOFT_BOUNDARY_CHARS = '，,、：:';
+const MIN_SPEAKABLE_CHARS = 18;
+const MAX_SPEAKABLE_CHARS = 90;
+const MAX_UNPUNCTUATED_CHARS = 72;
+
 function splitSpeakableSentences(
   text: string,
   flush = false,
 ): { sentences: string[]; rest: string } {
-  const sentences: string[] = [];
+  const chunks: string[] = [];
   let start = 0;
   for (let i = 0; i < text.length; i++) {
-    if ('。！？!?；;\n'.includes(text[i])) {
+    if (SPEECH_BOUNDARY_CHARS.includes(text[i])) {
       const sentence = text.slice(start, i + 1).trim();
-      if (sentence) sentences.push(sentence);
+      if (sentence) chunks.push(sentence);
       start = i + 1;
     }
   }
 
   let rest = text.slice(start);
-  if (flush && rest.trim()) {
-    sentences.push(rest.trim());
-    rest = '';
+  const sentences: string[] = [];
+  let pending = '';
+
+  for (const chunk of chunks) {
+    const candidate = (pending + chunk).trim();
+    const shouldHoldShortSentence =
+      !flush && candidate.length < MIN_SPEAKABLE_CHARS && candidate.length < MAX_SPEAKABLE_CHARS;
+
+    if (shouldHoldShortSentence) {
+      pending = candidate;
+      continue;
+    }
+
+    if (candidate) {
+      sentences.push(candidate);
+      pending = '';
+    }
   }
-  return { sentences, rest };
+
+  if (!flush && !chunks.length && rest.length >= MAX_UNPUNCTUATED_CHARS) {
+    const splitAt = findSoftBoundary(rest, MAX_UNPUNCTUATED_CHARS);
+    if (splitAt > 0) {
+      sentences.push(rest.slice(0, splitAt + 1).trim());
+      rest = rest.slice(splitAt + 1);
+    }
+  }
+
+  if (flush && rest.trim()) {
+    const finalSentence = (pending + rest).trim();
+    if (finalSentence) sentences.push(finalSentence);
+    rest = '';
+    pending = '';
+  }
+
+  const bufferedRest = (pending + rest).trimStart();
+  return { sentences, rest: bufferedRest };
+}
+
+function findSoftBoundary(text: string, maxIndex: number): number {
+  const limit = Math.min(maxIndex, text.length - 1);
+  for (let i = limit; i >= MIN_SPEAKABLE_CHARS; i--) {
+    if (SOFT_BOUNDARY_CHARS.includes(text[i])) return i;
+  }
+  return -1;
 }
 
 /**

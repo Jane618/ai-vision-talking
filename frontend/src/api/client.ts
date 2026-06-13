@@ -97,7 +97,8 @@ export interface MultimodalSettings {
   imageSize: number;
   adaptiveImageQuality?: boolean;
   imageQualityMin?: number;
-  /** 当前场景预设 ID，用于前端高亮与后续扩展 */
+  /** 预算/质量模式：省钱、均衡、高清识别 */
+  qualityMode?: 'budget' | 'balanced' | 'quality';
   /** 当前场景预设 ID，用于前端高亮与后续扩展 */
   scenePresetId?: string;
   /** 场景预设或用户自定义的系统提示词 */

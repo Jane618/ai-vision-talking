@@ -9,6 +9,7 @@ import { useConversation } from './hooks/useConversation';
 import type { MultimodalSettings } from './api/client';
 import { captureFrame, type CaptureResult } from './video/frameSampler';
 import { getScenePreset, DEFAULT_SCENE_PRESET_ID } from './presets/scenePresets';
+import { getQualityModePreset } from './presets/qualityModes';
 
 /**
  * 中断播报关键词列表：用户在语音输入时说这些词即可中断当前播报。
@@ -29,10 +30,11 @@ function containsStopKeyword(text: string): boolean {
  */
 export default function App() {
   const defaultPreset = getScenePreset(DEFAULT_SCENE_PRESET_ID);
+  const defaultQualityMode = getQualityModePreset('balanced');
   const [settings, setSettings] = useState<MultimodalSettings>({
     ...defaultPreset.settings,
-    adaptiveImageQuality: true,
-    imageQualityMin: Math.max(0.3, defaultPreset.settings.imageQuality - 0.35),
+    ...defaultQualityMode.settings,
+    qualityMode: defaultQualityMode.id,
     scenePresetId: defaultPreset.id,
   });
   const [isRunning, setIsRunning] = useState(false);
