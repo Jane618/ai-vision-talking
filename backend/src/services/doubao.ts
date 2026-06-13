@@ -23,13 +23,18 @@ export function getDefaultSystemPrompt(): string {
 }
 
 /**
- * 调用豆包多模态 API
- * @param messages 消息数组，可包含 system / user / assistant，其中最新一条 user 可包含图像
+ * 调用豆包多模态 API（流式）
+ * - 通过 stream=true 调用 Ark API，解析 SSE `data: {...}` 行
+ * - onDelta 每收到一块内容就回调一次
+ * - 最终返回完整文本与 token 使用量
+ * @param messages 消息数组，可包含 system / user / assistant
  * @param settings 可选设置（temperature, maxTokens）
+ * @param onDelta 可选的流式 delta 回调
  */
-export async function callDoubao(
+export async function callDoubaoStream(
   messages: ArkChatMessage[],
   settings?: UserSettings,
+  onDelta?: (delta: string) => void,
 ): Promise<DoubaoResponse> {
   const apiKey = process.env.ARK_API_KEY;
   const model = process.env.ARK_MODEL_ENDPOINT;
@@ -45,16 +50,17 @@ export async function callDoubao(
   const maxTokens =
     typeof settings?.maxTokens === 'number' ? settings.maxTokens : 512;
 
-  const body = {
+  const body: Record<string, any> = {
     model,
     messages,
     temperature,
     max_tokens: maxTokens,
+    stream: true,
+    stream_options: { include_usage: true },
   };
 
-  // 日志：打印消息长度与数量，不打印大字符串
   console.log(
-    `[doubao] 调用 Ark API: model=${model}, messages=${messages.length}, temp=${temperature}, maxTokens=${maxTokens}`,
+    `[doubao] 调用 Ark API (stream): model=${model}, messages=${messages.length}, temp=${temperature}, maxTokens=${maxTokens}`,
   );
 
   const resp = await fetch(ARK_ENDPOINT, {
@@ -78,16 +84,66 @@ export async function callDoubao(
     throw new Error(`Ark API ${resp.status}: ${detail}`);
   }
 
-  const data = (await resp.json()) as any;
-
-  const replyText: string =
-    (data?.choices?.[0]?.message?.content as string) ?? '';
-  const usage: ArkUsage = data?.usage ?? {
+  // 解析 SSE：按行读取 "data: {...}"，最后一行是 "data: [DONE]"
+  let replyText = '';
+  let usage: ArkUsage = {
     prompt_tokens: 0,
     completion_tokens: 0,
     total_tokens: 0,
   };
-  const modelName: string = data?.model ?? model;
+  let modelName = model;
+  let buffer = '';
+
+  const CHARS_PER_TOKEN = 1.8; // 估算：中文约 1.8 字 = 1 token
+
+  // 使用标准 web streams API 的 getReader() 读取（兼容 node-fetch v3）
+  if (resp.body && typeof (resp.body as any).getReader === 'function') {
+    const reader = (resp.body as any).getReader();
+    const decoder = new TextDecoder('utf-8');
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        parseSseBuffer();
+      }
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+  } else if (resp.body) {
+    // 兼容 Node.js 原生 Readable
+    const nodeStream = resp.body as unknown as NodeJS.ReadableStream;
+    for await (const chunk of nodeStream as any) {
+      buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+      parseSseBuffer();
+    }
+  } else {
+    // 最终兜底：一次性读取
+    const data = (await resp.json()) as any;
+    const text = (data?.choices?.[0]?.message?.content as string) ?? '';
+    usage = data?.usage ?? usage;
+    if (onDelta && text) onDelta(text);
+    replyText = text;
+  }
+
+  // 处理 buffer 中剩余的最后一行（有些服务不以 [DONE] 结尾）
+  parseSseBuffer(true);
+
+  // 如果 API 仍然未返回 usage（某些模型在流式下不返回），做一次文字估算
+  if (usage.total_tokens === 0 && replyText.length > 0) {
+    const estimatedCompletionTokens = Math.ceil(replyText.length / CHARS_PER_TOKEN);
+    usage.completion_tokens = estimatedCompletionTokens;
+    // prompt_tokens 难以精准估算，按 messages 中文字长度粗略估算
+    const promptChars = messages.reduce(
+      (sum, m) => sum + (typeof m.content === 'string' ? m.content.length : 0),
+      0,
+    );
+    usage.prompt_tokens = Math.ceil(promptChars / CHARS_PER_TOKEN);
+    usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+    console.log(
+      `[doubao] API 未返回 usage，已按文字估算: prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}`,
+    );
+  }
 
   console.log(
     `[doubao] 完成: usage.prompt=${usage.prompt_tokens}, completion=${usage.completion_tokens}, total=${usage.total_tokens}, replyLen=${replyText.length}`,
@@ -98,6 +154,52 @@ export async function callDoubao(
     usage,
     model: modelName,
   };
+
+  // 内部函数：从 buffer 中提取完整的 data 行并解析
+  function parseSseBuffer(flushAll?: boolean): void {
+    let lineBreakPos: number;
+    while ((lineBreakPos = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, lineBreakPos).replace(/\r$/, '');
+      buffer = buffer.slice(lineBreakPos + 1);
+      if (!line.startsWith('data:')) continue;
+      const payload = line.replace(/^data:\s*/, '').trim();
+      if (!payload || payload === '[DONE]') continue;
+      try {
+        const json = JSON.parse(payload) as any;
+        modelName = json.model || modelName;
+        const delta = json?.choices?.[0]?.delta;
+        const content: string | undefined = delta?.content;
+        if (content) {
+          replyText += content;
+          if (onDelta) onDelta(content);
+        }
+        if (json?.usage) {
+          usage = json.usage as ArkUsage;
+        }
+      } catch (e) {
+        console.debug(`[doubao] SSE parse error: ${payload.substring(0, 50)}`);
+      }
+    }
+    // flushAll=true 时处理 buffer 中最后一行（无换行符结尾）
+    if (flushAll && buffer.trim().startsWith('data:')) {
+      const remaining = buffer.trim();
+      const payload = remaining.replace(/^data:\s*/, '').trim();
+      if (payload && payload !== '[DONE]') {
+        try {
+          const json = JSON.parse(payload) as any;
+          if (json?.usage) usage = json.usage as ArkUsage;
+        } catch {}
+      }
+    }
+  }
+}
+
+/** 非流式版本：直接调用 callDoubaoStream 但忽略 delta */
+export async function callDoubao(
+  messages: ArkChatMessage[],
+  settings?: UserSettings,
+): Promise<DoubaoResponse> {
+  return callDoubaoStream(messages, settings);
 }
 
 /** 将原始 base64 图像规范化为 data:image/jpeg;base64,... 格式 */
