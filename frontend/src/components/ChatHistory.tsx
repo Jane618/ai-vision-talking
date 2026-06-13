@@ -1,11 +1,27 @@
-import { useEffect, useRef } from 'react';
-import type { ConversationMessage } from '../api/client';
+import { useEffect, useRef, useState } from 'react';
+import type { ConversationMessage, MultimodalSettings } from '../api/client';
+
+interface ChatHistoryInputProps {
+  inputText: string;
+  onInputChange: (text: string) => void;
+  onInputKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onSend: () => void;
+  onToggleListening: () => void;
+  onStopSpeaking: () => void;
+  isListening: boolean;
+  isSpeaking: boolean;
+  isInputLocked: boolean;
+  asrSupported: boolean;
+}
 
 interface ChatHistoryProps {
   messages: ConversationMessage[];
   isSending?: boolean;
   onClear: () => void;
   onResetSession: () => void;
+  settings: MultimodalSettings;
+  onSettingsChange: (next: MultimodalSettings) => void;
+  input?: ChatHistoryInputProps;
 }
 
 function formatTime(ts: number): string {
@@ -15,14 +31,26 @@ function formatTime(ts: number): string {
 }
 
 /**
- * 气泡式对话历史：
- * - 用户消息靠右，紫色渐变
- * - AI 消息靠左，机器人头像
- * - 系统消息居中
- * - 新消息滑入动画，支持"正在思考"状态
+ * 对话模块：
+ * - 顶部：标题、消息条数、清空对话、重置会话 + 「对话摘要」展开按钮
+ * - 可展开区：对话摘要开关 + 触发阈值设置
+ * - 中部：消息气泡列表（AI/用户/系统状态）
+ * - 底部：输入框、语音输入按钮、停止播报按钮、发送按钮
  */
-export function ChatHistory({ messages, isSending, onClear, onResetSession }: ChatHistoryProps) {
+export function ChatHistory({
+  messages,
+  isSending,
+  onClear,
+  onResetSession,
+  settings,
+  onSettingsChange,
+  input,
+}: ChatHistoryProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+
+  const update = (patch: Partial<MultimodalSettings>) => onSettingsChange({ ...settings, ...patch });
+  const enableSummary = settings.enableSummary !== false;
 
   useEffect(() => {
     const el = listRef.current;
@@ -31,11 +59,20 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
   }, [messages, isSending]);
 
   return (
-    <div className="card chat-history">
+    <div className="card chat-history chat-history--with-input">
       <div className="chat-history__header">
-        <div className="chat-history__title-wrap">
+        <div className="chat-history__title-left">
           <span className="chat-history__title">对话</span>
           <span className="chat-history__count">{messages.length} 条</span>
+          <button
+            type="button"
+            className={`btn btn--ghost btn--sm expand-toggle ${summaryOpen ? 'expand-toggle--on' : ''}`}
+            onClick={() => setSummaryOpen((v) => !v)}
+            aria-expanded={summaryOpen}
+            aria-controls="summary-panel"
+          >
+            {summaryOpen ? '收起摘要' : '对话摘要'}
+          </button>
         </div>
         <div className="chat-history__actions">
           <button type="button" className="btn btn--ghost btn--sm" onClick={onClear}>
@@ -46,6 +83,44 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
           </button>
         </div>
       </div>
+
+      <div
+        id="summary-panel"
+        className={`expand-panel expand-panel--compact ${summaryOpen ? 'expand-panel--open' : ''}`}
+        hidden={!summaryOpen}
+      >
+        <div className="expand-panel__section">
+          <label className="field field--switch">
+            <input
+              type="checkbox"
+              checked={enableSummary}
+              onChange={(e) => update({ enableSummary: e.target.checked })}
+            />
+            <span>启用对话摘要 — 历史对话达到阈值时自动压缩，降低 token 消耗。</span>
+          </label>
+
+          {enableSummary && (
+            <div className="field">
+              <label>
+                摘要触发阈值：
+                <strong>{(settings.summaryThresholdTokens || 8192).toLocaleString()} tokens</strong>
+              </label>
+              <input
+                type="range"
+                min={2048}
+                max={16384}
+                step={1024}
+                value={settings.summaryThresholdTokens || 8192}
+                onChange={(e) => update({ summaryThresholdTokens: Number(e.target.value) })}
+              />
+              <span className="field__hint">
+                2K ~ 16K tokens。阈值越小越频繁，更省 tokens；阈值越大越保留完整上下文。
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="chat-history__list" ref={listRef}>
         {messages.length === 0 && (
           <div className="chat-history__empty">
@@ -67,10 +142,7 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
           }
           const isUser = m.role === 'user';
           return (
-            <div
-              key={m.id}
-              className={`bubble-row ${isUser ? 'bubble-row--right' : 'bubble-row--left'}`}
-            >
+            <div key={m.id} className={`bubble-row ${isUser ? 'bubble-row--right' : 'bubble-row--left'}`}>
               <div className={`bubble ${isUser ? 'bubble--user' : 'bubble--assistant'}`}>
                 <div className="bubble__meta">
                   <span>{isUser ? '你' : 'AI'}</span>
@@ -78,7 +150,8 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
                   {m.hasImage && <span className="bubble__tag">含画面</span>}
                   {m.tokens && m.tokens > 0 && (
                     <span className="bubble__tag bubble__tag--tokens">
-                      {isUser ? '≈ ' : ''}{m.tokens} tokens
+                      {isUser ? '≈ ' : ''}
+                      {m.tokens} tokens
                     </span>
                   )}
                 </div>
@@ -95,6 +168,44 @@ export function ChatHistory({ messages, isSending, onClear, onResetSession }: Ch
           </div>
         )}
       </div>
+
+      {input && (
+        <div className="chat-history__input-bar">
+          <input
+            type="text"
+            className="input chat-history__input"
+            placeholder="输入消息后按 Enter 发送，或点击右侧「语音输入」"
+            value={input.inputText}
+            onChange={(e) => input.onInputChange(e.target.value)}
+            onKeyDown={input.onInputKeyDown}
+            disabled={input.isInputLocked}
+          />
+          <button
+            type="button"
+            className={`btn btn--with-icon ${input.isListening ? 'btn--danger' : 'btn--primary'}`}
+            onClick={input.onToggleListening}
+            disabled={!input.asrSupported || input.isInputLocked}
+            title={input.asrSupported ? '开启/关闭语音识别' : '当前浏览器不支持语音识别'}
+          >
+            <span className="btn__icon">🎙</span>
+            <span>{input.isListening ? '停止语音' : '语音输入'}</span>
+          </button>
+          {input.isSpeaking && (
+            <button
+              type="button"
+              className="btn btn--warning btn--with-icon"
+              onClick={input.onStopSpeaking}
+              title="停止当前 AI 语音播报（也可以在语音输入时说「停止」「别讲了」等关键词）"
+            >
+              <span>⏹</span>
+              <span>停止播报</span>
+            </button>
+          )}
+          <button type="button" className="btn btn--primary" onClick={input.onSend} disabled={input.isInputLocked}>
+            发送
+          </button>
+        </div>
+      )}
     </div>
   );
 }

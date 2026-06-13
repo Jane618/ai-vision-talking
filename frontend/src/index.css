@@ -14,6 +14,7 @@
   --card: #1e293b;
   --card-alt: #1a2538;
   --surface: rgba(255, 255, 255, 0.04);
+  --hover: rgba(99, 102, 241, 0.1);
 
   /* 边框与分隔 */
   --border: #2a3346;
@@ -75,6 +76,7 @@
   --card: #ffffff;
   --card-alt: #f8fafc;
   --surface: rgba(0, 0, 0, 0.02);
+  --hover: rgba(79, 70, 229, 0.06);
 
   --border: #e2e8f0;
   --border-soft: rgba(0, 0, 0, 0.06);
@@ -166,13 +168,21 @@ textarea {
  * ========================================================= */
 
 .app {
-  max-width: 1440px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   min-height: 100%;
+}
+
+/* 两列平分主布局 */
+.app--split .app__grid--split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: stretch;
 }
 
 .app__header {
@@ -181,13 +191,34 @@ textarea {
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid var(--border);
-  padding-bottom: 14px;
+  padding-bottom: 12px;
   flex-wrap: wrap;
+}
+
+.app__header-left {
+  display: none;
+}
+
+.app__header-center {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.app__header-right {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
 }
 
 .app__title {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.3px;
   background: var(--accent-gradient);
@@ -196,50 +227,118 @@ textarea {
   color: transparent;
 }
 
-.app__header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .hint {
   color: var(--muted);
   font-size: 12px;
 }
 
-.app__grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(380px, 1.2fr);
-  gap: 18px;
-  align-items: stretch;
-}
-
-.app__left {
+/* 两列平分：每列都是一个统一高度的大卡片 */
+.app__column--left,
+.app__column--right {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-}
-
-.app__right {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
   min-height: 0;
+  height: calc(100svh - 130px); /* 减去 header + padding 的估算 */
 }
 
-.app__bottom {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 18px;
+.app__column--left .card,
+.app__column--right .card {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
 }
 
-@media (max-width: 900px) {
-  .app__grid {
+/* 响应式：窄屏堆叠 */
+@media (max-width: 960px) {
+  .app--split .app__grid--split {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
-  .app__bottom {
-    grid-template-columns: 1fr;
+  .app__column--left,
+  .app__column--right {
+    height: auto;
+    min-height: 0;
   }
+  .app__column--left .card,
+  .app__column--right .card {
+    height: auto;
+    flex: 0 1 auto;
+  }
+  .app__column--left {
+    min-height: 360px;
+  }
+  .app__column--right {
+    min-height: 420px;
+  }
+}
+
+/* ========== 顶部状态栏（会话统计） ========== */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.status-bar__label {
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-bar__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.status-bar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.status-bar__dot--ok {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+}
+
+.status-bar__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.status-bar__item strong {
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-bar__item--saved strong {
+  color: var(--success);
+}
+
+.status-bar__item--cost strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.status-bar__sep {
+  color: var(--muted);
+  opacity: 0.6;
 }
 
 /* =========================================================
@@ -270,15 +369,138 @@ textarea {
 
 .video-preview {
   min-height: 360px;
+  overflow: hidden; /* 保持圆角 */
+}
+
+/* 摄像头模块作为悬浮设置面板的定位容器 */
+.video-preview--with-panel {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.video-preview__title-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .video-preview__title,
-.chat-history__title,
-.settings-panel__title,
-.cost-stats__title {
+.chat-history__title {
   font-weight: 600;
   font-size: 15px;
   color: var(--text);
+}
+
+.video-preview__stage {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  flex: 1 1 auto;
+  min-height: 180px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.video-preview__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* ========== 可展开面板（画面设置 / 对话摘要） ========== */
+.expand-toggle {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.expand-toggle--on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.expand-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-top: 4px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  max-height: 40vh;
+  animation: panel-in 0.22s ease;
+}
+
+/* 摄像头内的画面设置：悬浮展开，不参与摄像头画面布局计算 */
+.video-preview .expand-panel {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 62px;
+  z-index: 20;
+  max-height: calc(100% - 86px);
+  margin-top: 0;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px);
+}
+
+/* hidden=true 时隐藏 */
+.expand-panel[hidden] {
+  display: none !important;
+}
+
+.expand-panel--compact {
+  padding: 10px 14px;
+  max-height: 30vh;
+}
+
+.expand-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.expand-panel__section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.expand-panel__divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 2px 0;
+}
+
+.expand-panel__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .video-preview__indicators {
@@ -407,9 +629,15 @@ textarea {
  * ========================================================= */
 
 .chat-history {
-  flex: 1;
-  min-height: 260px;
-  max-height: 520px;
+  flex: 1 1 auto;
+  min-height: 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-history--with-input {
+  min-height: 0;
 }
 
 .chat-history__header {
@@ -418,12 +646,15 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-.chat-history__title-wrap {
+.chat-history__title-left {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .chat-history__count {
@@ -437,14 +668,30 @@ textarea {
 }
 
 .chat-history__list {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 120px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 4px 2px 4px 2px;
-  min-height: 200px;
+  padding: 6px 2px;
   scroll-behavior: smooth;
+  min-width: 0;
+}
+
+.chat-history__input-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chat-history__input {
+  flex: 1;
+  min-width: 120px;
 }
 
 .chat-history__empty {
