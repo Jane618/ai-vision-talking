@@ -1,9 +1,22 @@
 /**
  * 与后端保持契约的类型定义 & 简易 HTTP 客户端。
- * 通过 vite dev proxy 转发到 http://localhost:3001。
+ *
+ * Web 端 / 开发态：默认使用相对路径 `/api`，由 Vite dev server 代理到 backend。
+ * 手机端（Capacitor 打包后）：必须通过 `VITE_API_BASE_URL` 显式指定后端地址。
+ *   例：VITE_API_BASE_URL=https://192.168.1.10:3001/api
  *
  * ⚠️ 字段必须与 backend/src/types.ts 的 MultimodalResponseBody 保持一致！
  */
+
+// Vite 在 `import.meta.env` 上注入所有 VITE_* 变量
+const ENV_BASE: string | undefined =
+  typeof import.meta !== 'undefined' && (import.meta as any).env
+    ? (import.meta as any).env.VITE_API_BASE_URL
+    : undefined;
+
+const API_BASE: string = ENV_BASE || '/api';
+
+export { API_BASE };
 
 export interface MultimodalRequest {
   sessionId: string;
@@ -61,16 +74,12 @@ export interface ConversationMessage {
   hasImage?: boolean;
 }
 
-const API_BASE = '/api';
-
 /** 生成一个简单的会话 ID：时间戳 + 随机串。 */
 export function createSessionId(): string {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/**
- * 调用多模态接口。
- */
+/** 调用多模态接口。 */
 export async function sendMultimodal(
   payload: MultimodalRequest,
   signal?: AbortSignal,
@@ -115,9 +124,7 @@ export async function clearSessionApi(sessionId: string): Promise<boolean> {
   }
 }
 
-/**
- * 将 base64 字符串（可能带 data: 前缀）解码为音频 Blob。
- */
+/** 将 base64 字符串（可能带 data: 前缀）解码为音频 Blob。 */
 export function base64ToAudioBlob(base64: string, mimeType = 'audio/wav'): Blob {
   let data = base64;
   if (data.includes(',')) {
@@ -132,14 +139,10 @@ export function base64ToAudioBlob(base64: string, mimeType = 'audio/wav'): Blob 
   return new Blob([byteNumbers], { type: mimeType });
 }
 
-/**
- * 浏览器 TTS 回退：无需任何后端音频即可朗读文本。
- * 当火山引擎 TTS 未配置时，此函数作为兜底。
- */
+/** 浏览器 TTS 回退：无需任何后端音频即可朗读文本。 */
 export function speakWithBrowserTTS(text: string, lang = 'zh-CN'): void {
   try {
     if (!('speechSynthesis' in window)) return;
-    // 取消正在播放的内容，避免重叠
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = lang;
@@ -152,8 +155,7 @@ export function speakWithBrowserTTS(text: string, lang = 'zh-CN'): void {
 }
 
 /**
- * 立即停止任何正在播放的语音（包括浏览器 TTS、HTMLAudioElement）。
- * 适合作为「手动中断播报」和「关键词中断播报」的统一入口。
+ * 立即停止任何正在播放的语音（浏览器 TTS / HTMLAudioElement / Capacitor TTS）。
  */
 export function stopSpeaking(audioElement?: HTMLAudioElement | null): void {
   try {
@@ -170,5 +172,14 @@ export function stopSpeaking(audioElement?: HTMLAudioElement | null): void {
     } catch {
       /* ignore */
     }
+  }
+  // Capacitor TTS 原生停止兜底
+  try {
+    const tts = (window as any).Capacitor?.Plugins?.TextToSpeech;
+    if (tts && typeof tts.stop === 'function') {
+      tts.stop().catch(() => { /* ignore */ });
+    }
+  } catch {
+    /* ignore */
   }
 }
