@@ -206,7 +206,6 @@ input, textarea {
   height: 100%;
   object-fit: cover;
   display: block;
-  transform: scaleX(-1); /* 镜像，更自然 */
   background: #000;
 }
 
@@ -257,9 +256,28 @@ input, textarea {
   max-height: 520px;
 }
 
+.chat-history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chat-history__title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
 .chat-history__count {
   color: var(--muted);
   font-size: 12px;
+}
+
+.chat-history__actions {
+  display: flex;
+  gap: 6px;
 }
 
 .chat-history__list {
@@ -437,6 +455,23 @@ input, textarea {
   background: var(--danger);
   color: #fff;
   border-color: var(--danger);
+}
+
+.btn--sm {
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.btn--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn__icon {
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 /* 设置面板 */
