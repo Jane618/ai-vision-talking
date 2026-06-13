@@ -106,11 +106,20 @@ export function VideoPreview({
       </div>
 
       <div className="video-preview__footer">
-        {onToggleCamera && (
-          <button type="button" className="btn btn--ghost" onClick={onToggleCamera}>
-            {cameraDisabled ? '启用摄像头' : '停用摄像头'}
+        <div className="video-preview__controls">
+          {onToggleCamera && (
+            <button type="button" className="btn btn--ghost" onClick={onToggleCamera}>
+              {cameraDisabled ? '启用摄像头' : '停用摄像头'}
+            </button>
+          )}
+          <button
+            type="button"
+            className={`btn ${isRunning ? 'btn--warning' : 'btn--primary'}`}
+            onClick={onToggleRunning}
+          >
+            {isRunning ? '暂停传输' : '开始传输画面'}
           </button>
-        )}
+        </div>
         <span className="hint">画面变化时自动抽取并发送给多模态模型。</span>
       </div>
 
@@ -245,15 +254,6 @@ export function VideoPreview({
             <span className="field__hint">最长边像素，保持画面比例缩放。</span>
           </div>
 
-          <div className="expand-panel__actions">
-            <button
-              type="button"
-              className={`btn ${isRunning ? 'btn--warning' : 'btn--primary'}`}
-              onClick={onToggleRunning}
-            >
-              {isRunning ? '暂停传输' : '开始传输画面'}
-            </button>
-          </div>
         </div>
       </div>
     </div>

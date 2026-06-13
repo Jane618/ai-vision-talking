@@ -414,6 +414,13 @@ textarea {
   flex-shrink: 0;
 }
 
+.video-preview__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ========== 可展开面板（画面设置 / 对话摘要） ========== */
 .expand-toggle {
   font-size: 12px;
