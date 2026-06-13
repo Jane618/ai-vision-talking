@@ -1,11 +1,17 @@
 /**
  * Express 入口与路由
  *
+ * 同时托管前端静态资源（frontend/dist）+ 提供 /api/* 后端接口，
+ * 这样手机 / 桌面端只要访问一个 HTTPS 入口（https://<IP>:3001）就能
+ * - 拿到前端页面（/ 或任意非 /api 的路径会 fallback 到 index.html）
+ * - 调 /api/health、/api/multimodal、/api/clear
+ *
  * 环境变量：
  *   SERVER_PORT          默认 3001
  *   SERVER_HOST          默认 0.0.0.0（允许同局域网访问）；可改为 127.0.0.1 仅本地
- *   SERVER_CERT_FILE     HTTPS 证书路径（可选）
+ *   SERVER_CERT_FILE     HTTPS 证书路径（可选，不提供则走 HTTP）
  *   SERVER_KEY_FILE      HTTPS 私钥路径（可选）
+ *   SERVER_FRONTEND_DIR  前端构建产物目录，默认 ../frontend/dist（相对 backend/）
  *   ARK_API_KEY          豆包多模态模型 API Key
  *   ARK_MODEL_ENDPOINT   豆包多模态模型 endpoint
  *   VOLC_TTS_*           火山引擎 TTS（可选）
@@ -16,6 +22,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import http from 'http';
 import https from 'https';
+import path from 'path';
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -47,6 +54,15 @@ const HOST = process.env.SERVER_HOST || '0.0.0.0';
 const CERT_FILE = process.env.SERVER_CERT_FILE || '';
 const KEY_FILE = process.env.SERVER_KEY_FILE || '';
 
+// 前端构建产物目录：
+//   开发态（backend 仓库与 frontend 仓库同级）：
+//     <repo>/backend/src/index.ts → dist/index.js → <repo>/backend/dist
+//     frontend/dist 相对 backend 就是 ../frontend/dist
+//   也可以用 SERVER_FRONTEND_DIR 显式覆盖
+const FRONTEND_DIR =
+  process.env.SERVER_FRONTEND_DIR ||
+  path.resolve(__dirname, '..', '..', 'frontend', 'dist');
+
 // 中间件
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
@@ -57,6 +73,40 @@ app.use((req, _res, next) => {
   console.log(`[http] ${req.method} ${req.path}`);
   next();
 });
+
+// 托管前端静态产物（index.html、CSS、JS、manifest 等）
+// - /assets/*、/manifest.json、/icon-*.png 等静态文件走 express.static
+// - 不存在的路径（例如用户刷新 / 时）fallback 到 index.html，支持 SPA 路由
+if (fs.existsSync(FRONTEND_DIR)) {
+  console.log(`[server] 前端静态目录: ${FRONTEND_DIR}`);
+  app.use(
+    express.static(FRONTEND_DIR, {
+      index: 'index.html',
+      maxAge: '1m',
+      setHeaders: (res, filePath) => {
+        // 带 hash 的 js/css 可长缓存；其它按默认处理
+        if (/\.[a-f0-9]{8,}\.(js|css)$/i.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }),
+  );
+
+  // SPA fallback：任何非 /api/* 的 GET 请求未命中静态文件 → 返回 index.html
+  app.get('*', (req: Request, res: Response, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    const indexHtml = path.join(FRONTEND_DIR, 'index.html');
+    if (fs.existsSync(indexHtml)) {
+      res.sendFile(indexHtml);
+    } else {
+      res.status(404).json({ ok: false, error: 'Not Found' });
+    }
+  });
+} else {
+  console.warn(
+    `[server] ⚠️  前端静态目录不存在: ${FRONTEND_DIR}。请先在 frontend 下执行 npm run build。`,
+  );
+}
 
 /** 健康检查 */
 app.get('/api/health', (_req: Request, res: Response) => {
