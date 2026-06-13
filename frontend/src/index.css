@@ -831,6 +831,81 @@ textarea {
 }
 
 /* =========================================================
+ * 场景预设
+ * ========================================================= */
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.preset-card {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease,
+    transform 0.08s ease;
+}
+
+.preset-card:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.preset-card--active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.22), var(--shadow-sm);
+}
+
+.preset-card__icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.preset-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.preset-card__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.preset-card__desc {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.preset-card__tone {
+  font-size: 10.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* =========================================================
  * 设置面板（按功能分块）
  * ========================================================= */
 
@@ -1140,6 +1215,14 @@ textarea {
 
   .cost-stats__grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .preset-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preset-card {
+    min-height: 44px;
   }
 
   .theme-toggle {

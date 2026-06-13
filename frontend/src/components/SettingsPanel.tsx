@@ -1,4 +1,5 @@
 import type { MultimodalSettings } from '../api/client';
+import { SCENE_PRESETS } from '../presets/scenePresets';
 
 interface SettingsPanelProps {
   settings: MultimodalSettings;
@@ -14,9 +15,49 @@ interface SettingsPanelProps {
 export function SettingsPanel({ settings, onChange, isRunning, onToggleRunning }: SettingsPanelProps) {
   const update = (patch: Partial<MultimodalSettings>) => onChange({ ...settings, ...patch });
   const enableSummary = settings.enableSummary !== false;
+  const applyPreset = (presetId: string) => {
+    const preset = SCENE_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+    onChange({
+      ...settings,
+      ...preset.settings,
+      scenePresetId: preset.id,
+    });
+  };
 
   return (
     <div className="card settings-panel">
+      <div className="settings-panel__header">
+        <span className="settings-panel__title">场景预设</span>
+        <span className="badge badge--ok">一键应用</span>
+      </div>
+
+      <div className="preset-grid">
+        {SCENE_PRESETS.map((preset) => {
+          const active = settings.scenePresetId === preset.id;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              className={`preset-card ${active ? 'preset-card--active' : ''}`}
+              onClick={() => applyPreset(preset.id)}
+              aria-pressed={active}
+            >
+              <span className="preset-card__icon" aria-hidden="true">
+                {preset.icon}
+              </span>
+              <span className="preset-card__body">
+                <span className="preset-card__title">{preset.name}</span>
+                <span className="preset-card__desc">{preset.description}</span>
+                <span className="preset-card__tone">{preset.tone}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="settings-panel__divider" />
+
       <div className="settings-panel__header">
         <span className="settings-panel__title">画面设置</span>
         <span className={`badge ${isRunning ? 'badge--ok' : 'badge--off'}`}>
