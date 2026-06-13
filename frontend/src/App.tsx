@@ -9,6 +9,7 @@ import { useCamera } from './hooks/useCamera';
 import { useConversation } from './hooks/useConversation';
 import type { MultimodalSettings } from './api/client';
 import { captureFrame } from './video/frameSampler';
+import { getScenePreset, DEFAULT_SCENE_PRESET_ID } from './presets/scenePresets';
 
 /**
  * 中断播报关键词列表：用户在语音输入时说这些词即可中断当前播报。
@@ -55,10 +56,10 @@ function MicIcon({ className }: { className?: string }) {
  * - 底部：文本输入框（回车发送），支持语音输入；播报时显示「停止播报」按钮
  */
 export default function App() {
+  const defaultPreset = getScenePreset(DEFAULT_SCENE_PRESET_ID);
   const [settings, setSettings] = useState<MultimodalSettings>({
-    frameIntervalMs: 3000,
-    imageQuality: 0.8,
-    imageSize: 512,
+    ...defaultPreset.settings,
+    scenePresetId: defaultPreset.id,
   });
   const [isRunning, setIsRunning] = useState(false);
   const [inputText, setInputText] = useState('');

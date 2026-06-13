@@ -95,6 +95,10 @@ export interface MultimodalSettings {
   frameIntervalMs: number;
   imageQuality: number;
   imageSize: number;
+  /** 当前场景预设 ID，用于前端高亮与后续扩展 */
+  scenePresetId?: string;
+  /** 场景预设或用户自定义的系统提示词 */
+  systemPrompt?: string;
   /** 🆕 是否启用对话摘要（默认 true） */
   enableSummary?: boolean;
   /** 🆕 触发摘要的累计 tokens 阈值（默认 8192） */

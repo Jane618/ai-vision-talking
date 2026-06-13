@@ -252,6 +252,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
               frameIntervalMs: settings.frameIntervalMs,
               imageQuality: settings.imageQuality,
               imageSize: settings.imageSize,
+              systemPrompt: settings.systemPrompt,
               enableTTS: false,
               enableSummary: settings.enableSummary !== false,
               summaryThresholdTokens: settings.summaryThresholdTokens || 8192,
