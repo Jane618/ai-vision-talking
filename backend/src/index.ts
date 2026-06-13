@@ -169,7 +169,11 @@ app.post(
 
       // 🆕 先检查是否需要摘要（在构造 messages 之前，这样
       // 构造的历史会是摘要替换后的）。
-      const summaryApplied = await summarizeIfNeeded(conv, settings);
+      const summaryApplied = await summarizeIfNeeded(conv, settings, {
+        userText,
+        imageDataUrl,
+        systemPrompt: settings.systemPrompt,
+      });
 
       const messages = buildArkMessages({
         conv,
