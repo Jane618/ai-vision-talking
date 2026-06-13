@@ -22,6 +22,7 @@ interface UseConversationResult {
   sessionId: string;
   messages: ConversationMessage[];
   isSending: boolean;
+  isInputLocked: boolean;
   isSpeaking: boolean;
   error: string | null;
   cost: CostInfo;
@@ -70,6 +71,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   const [sessionId, setSessionId] = useState<string>(() => createSessionId());
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [isInputLocked, setIsInputLocked] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cost, setCost] = useState<CostInfo>(DEFAULT_COST);
@@ -167,6 +169,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
       setMessages((prev) => [...prev, userMsg]);
 
       setIsSending(true);
+      setIsInputLocked(true);
       setError(null);
 
       try {
@@ -253,6 +256,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         });
         // 收到 AI 回复后立即结束"正在思考"状态（与音频播报解耦）
         setIsSending(false);
+        setIsInputLocked(false);
 
         // 🆕 本次 API 请求的 tokens 拆解（系统消息，便于调试和感知成本）
         if (response.tokenBreakdown) {
@@ -305,6 +309,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         const message = (err as Error)?.message || '请求失败';
         setError(message);
         setIsSending(false); // 出错时也结束"正在思考"状态
+        setIsInputLocked(false);
         setMessages((prev) => [
           ...prev,
           {
@@ -338,12 +343,15 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     setMessages([]);
     setError(null);
     setCost(DEFAULT_COST);
+    setIsSending(false);
+    setIsInputLocked(false);
   }, [sessionId]);
 
   return {
     sessionId,
     messages,
     isSending,
+    isInputLocked,
     isSpeaking,
     error,
     cost,
