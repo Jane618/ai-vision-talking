@@ -7,7 +7,7 @@ import { useASR } from './hooks/useASR';
 import { useCamera } from './hooks/useCamera';
 import { useConversation } from './hooks/useConversation';
 import type { MultimodalSettings } from './api/client';
-import { captureFrame } from './video/frameSampler';
+import { captureFrame, type CaptureResult } from './video/frameSampler';
 import { getScenePreset, DEFAULT_SCENE_PRESET_ID } from './presets/scenePresets';
 
 /**
@@ -31,11 +31,14 @@ export default function App() {
   const defaultPreset = getScenePreset(DEFAULT_SCENE_PRESET_ID);
   const [settings, setSettings] = useState<MultimodalSettings>({
     ...defaultPreset.settings,
+    adaptiveImageQuality: true,
+    imageQualityMin: Math.max(0.3, defaultPreset.settings.imageQuality - 0.35),
     scenePresetId: defaultPreset.id,
   });
   const [isRunning, setIsRunning] = useState(false);
   const [inputText, setInputText] = useState('');
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
+  const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null);
 
   const { videoRef, isReady: cameraReady, error: cameraError, start: startCamera, stop: stopCamera } =
     useCamera();
@@ -108,15 +111,22 @@ export default function App() {
       const video = videoRef.current;
       if (!video || !cameraReady) return;
       try {
-        const { base64, changed, imageData } = await captureFrame(
+        const result = await captureFrame(
           video,
-          { imageSize: settings.imageSize, imageQuality: settings.imageQuality },
+          {
+            imageSize: settings.imageSize,
+            imageQuality: settings.imageQuality,
+            adaptiveImageQuality: settings.adaptiveImageQuality,
+            imageQualityMin: settings.imageQualityMin,
+          },
           prevImageDataRef.current,
         );
+        const { base64, changed, imageData } = result;
         if (changed) {
           prevImageDataRef.current = imageData;
           setCurrentFrame(base64);
         }
+        setLastCapture(result);
       } catch {
         /* 抽帧失败忽略，下一帧继续 */
       }
@@ -191,6 +201,7 @@ export default function App() {
             onSettingsChange={setSettings}
             isRunning={isRunning}
             onToggleRunning={handleToggleRunning}
+            lastCapture={lastCapture}
           />
         </section>
 

@@ -95,6 +95,9 @@ export interface MultimodalSettings {
   frameIntervalMs: number;
   imageQuality: number;
   imageSize: number;
+  adaptiveImageQuality?: boolean;
+  imageQualityMin?: number;
+  /** 当前场景预设 ID，用于前端高亮与后续扩展 */
   /** 当前场景预设 ID，用于前端高亮与后续扩展 */
   scenePresetId?: string;
   /** 场景预设或用户自定义的系统提示词 */

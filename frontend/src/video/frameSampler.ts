@@ -6,12 +6,30 @@
 export interface CaptureSettings {
   imageSize: number;  // 输出图像最长边像素，默认 512
   imageQuality: number; // JPEG 质量，0.3 - 1.0，默认 0.8
+  /** 是否根据画面复杂度自动调整 JPEG 质量 */
+  adaptiveImageQuality?: boolean;
+  /** 自适应 JPEG 质量下限，默认 0.45 */
+  imageQualityMin?: number;
 }
 
 export interface CaptureResult {
   base64: string;
   changed: boolean;
   imageData: ImageData;
+  effectiveQuality: number;
+  complexity: ImageComplexity;
+  estimatedBytes: number;
+}
+
+export interface ImageComplexity {
+  /** 0~1，综合 Laplacian 方差与边缘像素比例后的复杂度分数 */
+  score: number;
+  /** Laplacian 方差，文字、纹理、细节越多通常越高 */
+  laplacianVariance: number;
+  /** 边缘像素比例，0~1 */
+  edgeRatio: number;
+  /** 便于 UI 展示的复杂度等级 */
+  level: 'low' | 'medium' | 'high';
 }
 
 /**
@@ -45,13 +63,16 @@ export async function captureFrame(
   ctx.drawImage(videoEl, 0, 0, outW, outH);
   const imageData = ctx.getImageData(0, 0, outW, outH);
 
-  const base64 = canvas.toDataURL('image/jpeg', imageQuality);
+  const complexity = analyzeImageComplexity(imageData);
+  const effectiveQuality = resolveImageQuality(settings, complexity.score);
+  const base64 = canvas.toDataURL('image/jpeg', effectiveQuality);
+  const estimatedBytes = estimateDataUrlBytes(base64);
 
   const changed = prevData
     ? computeFrameDifference(imageData, prevData) > changeThreshold
     : true;
 
-  return { base64, changed, imageData };
+  return { base64, changed, imageData, effectiveQuality, complexity, estimatedBytes };
 }
 
 /**
@@ -73,6 +94,87 @@ export function computeFrameDifference(
     sum += Math.abs(a[i] - b[i]);
   }
   return sum / a.length; // 0 ~ 255 灰度差均值
+}
+
+/**
+ * 分析画面复杂度：
+ * - 使用 Laplacian 方差感知文字、纹理、细节密度
+ * - 使用边缘像素比例补充判断线条/轮廓密度
+ * - 输出 0~1 分数，用于映射 JPEG quality
+ */
+export function analyzeImageComplexity(imageData: ImageData): ImageComplexity {
+  const gray = downsample(imageData, 96, 96);
+  if (!gray) {
+    return { score: 0.5, laplacianVariance: 0, edgeRatio: 0, level: 'medium' };
+  }
+
+  const width = 96;
+  const height = 96;
+  const values: number[] = [];
+  let edgeCount = 0;
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const laplacian =
+        gray[i - width] +
+        gray[i - 1] +
+        gray[i + 1] +
+        gray[i + width] -
+        gray[i] * 4;
+      const abs = Math.abs(laplacian);
+      values.push(laplacian);
+      if (abs > 18) edgeCount++;
+    }
+  }
+
+  if (values.length === 0) {
+    return { score: 0.5, laplacianVariance: 0, edgeRatio: 0, level: 'medium' };
+  }
+
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const laplacianVariance =
+    values.reduce((sum, value) => {
+      const diff = value - mean;
+      return sum + diff * diff;
+    }, 0) / values.length;
+  const edgeRatio = edgeCount / values.length;
+
+  // 经验阈值：低复杂度纯色/天空接近 0；文字、屏幕、密集纹理趋近 1。
+  const varianceScore = clamp01((laplacianVariance - 80) / 900);
+  const edgeScore = clamp01((edgeRatio - 0.03) / 0.22);
+  const score = clamp01(varianceScore * 0.7 + edgeScore * 0.3);
+  const level = score >= 0.68 ? 'high' : score <= 0.32 ? 'low' : 'medium';
+
+  return { score, laplacianVariance, edgeRatio, level };
+}
+
+function resolveImageQuality(settings: CaptureSettings, complexityScore: number): number {
+  const maxQuality = clamp(settings.imageQuality ?? 0.8, 0.3, 1);
+  if (!settings.adaptiveImageQuality) return maxQuality;
+
+  const rawMin = settings.imageQualityMin ?? Math.max(0.3, maxQuality - 0.35);
+  const minQuality = clamp(Math.min(rawMin, maxQuality), 0.3, 1);
+  const easedScore = easeInOut(complexityScore);
+  return clamp(minQuality + (maxQuality - minQuality) * easedScore, minQuality, maxQuality);
+}
+
+function estimateDataUrlBytes(dataUrl: string): number {
+  const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+  return Math.round((base64.length * 3) / 4);
+}
+
+function clamp01(value: number): number {
+  return clamp(value, 0, 1);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function easeInOut(value: number): number {
+  const t = clamp01(value);
+  return t * t * (3 - 2 * t);
 }
 
 /** 将 ImageData 降采样为 targetW*targetH 的灰度数组。 */

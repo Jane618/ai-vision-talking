@@ -1233,6 +1233,26 @@ textarea {
   line-height: 1.5;
 }
 
+.adaptive-quality-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.adaptive-quality-status span {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+}
+
 .settings-panel__actions {
   display: flex;
   flex-wrap: wrap;

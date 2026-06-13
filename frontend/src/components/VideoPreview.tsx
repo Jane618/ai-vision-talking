@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { MultimodalSettings } from '../api/client';
 import { SCENE_PRESETS } from '../presets/scenePresets';
+import type { CaptureResult } from '../video/frameSampler';
 
 interface VideoPreviewProps {
   videoRef: React.RefObject<HTMLVideoElement>;
@@ -14,6 +15,7 @@ interface VideoPreviewProps {
   onSettingsChange: (next: MultimodalSettings) => void;
   isRunning: boolean;
   onToggleRunning: () => void;
+  lastCapture?: CaptureResult | null;
 }
 
 /**
@@ -34,9 +36,19 @@ export function VideoPreview({
   onSettingsChange,
   isRunning,
   onToggleRunning,
+  lastCapture,
 }: VideoPreviewProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const update = (patch: Partial<MultimodalSettings>) => onSettingsChange({ ...settings, ...patch });
+  const adaptiveEnabled = settings.adaptiveImageQuality !== false;
+  const qualityMin = settings.imageQualityMin ?? Math.max(0.3, settings.imageQuality - 0.35);
+  const complexityLabel =
+    lastCapture?.complexity.level === 'high'
+      ? '复杂'
+      : lastCapture?.complexity.level === 'low'
+        ? '简单'
+        : '中等';
+  const estimatedKb = lastCapture ? Math.max(1, Math.round(lastCapture.estimatedBytes / 1024)) : null;
 
   const applyPreset = (presetId: string) => {
     const preset = SCENE_PRESETS.find((item) => item.id === presetId);
@@ -158,7 +170,7 @@ export function VideoPreview({
 
           <div className="field">
             <label>
-              图像质量：
+              {adaptiveEnabled ? '图像质量上限：' : '图像质量：'}
               <strong>{settings.imageQuality.toFixed(2)}</strong>
             </label>
             <input
@@ -167,10 +179,55 @@ export function VideoPreview({
               max={1}
               step={0.05}
               value={settings.imageQuality}
-              onChange={(e) => update({ imageQuality: Number(e.target.value) })}
+              onChange={(e) => {
+                const nextMax = Number(e.target.value);
+                update({
+                  imageQuality: nextMax,
+                  imageQualityMin: Math.min(qualityMin, nextMax),
+                });
+              }}
             />
-            <span className="field__hint">0.3 低画质省流量 / 1.0 最高画质。</span>
+            <span className="field__hint">
+              {adaptiveEnabled
+                ? '复杂画面会接近上限，保留文字和细节。'
+                : '0.3 低画质省流量 / 1.0 最高画质。'}
+            </span>
           </div>
+
+          <label className="field field--switch">
+            <input
+              type="checkbox"
+              checked={adaptiveEnabled}
+              onChange={(e) => update({ adaptiveImageQuality: e.target.checked })}
+            />
+            <span>智能自适应质量 — 根据画面复杂度自动调整 JPEG quality，降低图片 token 成本。</span>
+          </label>
+
+          {adaptiveEnabled && (
+            <>
+              <div className="field">
+                <label>
+                  图像质量下限：
+                  <strong>{qualityMin.toFixed(2)}</strong>
+                </label>
+                <input
+                  type="range"
+                  min={0.3}
+                  max={settings.imageQuality}
+                  step={0.05}
+                  value={qualityMin}
+                  onChange={(e) => update({ imageQualityMin: Number(e.target.value) })}
+                />
+                <span className="field__hint">简单画面会靠近下限，纯色/大面积背景可明显减小体积。</span>
+              </div>
+
+              <div className="adaptive-quality-status">
+                <span>当前画面：{lastCapture ? complexityLabel : '等待抽帧'}</span>
+                <span>实际 quality：{lastCapture ? lastCapture.effectiveQuality.toFixed(2) : '--'}</span>
+                <span>估算体积：{estimatedKb ? `${estimatedKb} KB` : '--'}</span>
+              </div>
+            </>
+          )}
 
           <div className="field">
             <label>
