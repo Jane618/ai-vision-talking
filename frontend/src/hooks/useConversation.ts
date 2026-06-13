@@ -6,7 +6,7 @@ import {
   CostInfo,
   createSessionId,
   MultimodalSettings,
-  sendMultimodal,
+  sendMultimodalStream,
   speakWithBrowserTTS,
   stopSpeaking as stopSpeakingCore,
 } from '../api/client';
@@ -171,33 +171,88 @@ export function useConversation(options: UseConversationOptions): UseConversatio
 
       try {
         const currentImage = image ?? getCurrentFrame?.();
+        const aiMsgId = uid();
+        let streamedReply = '';
+        let aiMessageStarted = false;
 
-        const response = await sendMultimodal({
-          sessionId,
-          userText: text,
-          image: currentImage,
-          settings: {
-            frameIntervalMs: settings.frameIntervalMs,
-            imageQuality: settings.imageQuality,
-            imageSize: settings.imageSize,
-            enableTTS: true,
-            enableSummary: settings.enableSummary !== false,
-            summaryThresholdTokens: settings.summaryThresholdTokens || 8192,
+        const response = await sendMultimodalStream(
+          {
+            sessionId,
+            userText: text,
+            image: currentImage,
+            settings: {
+              frameIntervalMs: settings.frameIntervalMs,
+              imageQuality: settings.imageQuality,
+              imageSize: settings.imageSize,
+              enableTTS: false,
+              enableSummary: settings.enableSummary !== false,
+              summaryThresholdTokens: settings.summaryThresholdTokens || 8192,
+            },
           },
-        });
+          {
+            onSummary: (summary) => {
+              const savedYuan = (summary.estimatedSavedCNY || 0).toFixed(4);
+              const summaryMsg: ConversationMessage = {
+                id: uid(),
+                role: 'system',
+                content: `📝 已对之前 ${summary.replacedMessages} 条对话做摘要：\n${summary.summary}\n（节省 ${summary.savedTokens} tokens · 节省 ¥${savedYuan}）`,
+                ts: Date.now(),
+              };
+              setMessages((prev) => [...prev, summaryMsg]);
+            },
+            onDelta: (delta) => {
+              streamedReply += delta;
+              if (!aiMessageStarted) {
+                aiMessageStarted = true;
+                const aiMsg: ConversationMessage = {
+                  id: aiMsgId,
+                  role: 'assistant',
+                  content: streamedReply,
+                  ts: Date.now(),
+                };
+                setMessages((prev) => [...prev, aiMsg]);
+                setIsSending(false);
+                return;
+              }
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId ? { ...m, content: streamedReply } : m,
+                ),
+              );
+            },
+            onError: (message) => {
+              setError(message);
+            },
+          },
+        );
 
-        // 🆕 若本次调用触发了摘要，在对话历史中插入一条系统提示消息
-        if (response.summaryApplied) {
-          const summary = response.summaryApplied;
-          const savedYuan = (summary.estimatedSavedCNY || 0).toFixed(4);
-          const summaryMsg: ConversationMessage = {
-            id: uid(),
-            role: 'system',
-            content: `📝 已对之前 ${summary.replacedMessages} 条对话做摘要：\n${summary.summary}\n（节省 ${summary.savedTokens} tokens · 节省 ¥${savedYuan}）`,
-            ts: Date.now(),
-          };
-          setMessages((prev) => [...prev, summaryMsg]);
-        }
+        const aiReply = response.replyText || '';
+        // AI 消息的 tokens：使用豆包 API 本次调用返回的 completion_tokens（或 total_tokens 作为兜底）
+        const aiMsgTokens = response.usage
+          ? response.usage.completion_tokens || response.usage.total_tokens
+          : Math.ceil(aiReply.length / 1.8);
+        const finalReply = aiReply || streamedReply;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === aiMsgId)) {
+            return prev.map((m) =>
+              m.id === aiMsgId
+                ? { ...m, content: finalReply, tokens: aiMsgTokens }
+                : m,
+            );
+          }
+          return [
+            ...prev,
+            {
+              id: aiMsgId,
+              role: 'assistant',
+              content: finalReply,
+              ts: Date.now(),
+              tokens: aiMsgTokens,
+            },
+          ];
+        });
+        // 收到 AI 回复后立即结束"正在思考"状态（与音频播报解耦）
+        setIsSending(false);
 
         // 🆕 本次 API 请求的 tokens 拆解（系统消息，便于调试和感知成本）
         if (response.tokenBreakdown) {
@@ -219,22 +274,6 @@ export function useConversation(options: UseConversationOptions): UseConversatio
           setMessages((prev) => [...prev, tokenMsg]);
         }
 
-        const aiReply = response.replyText || '';
-        // AI 消息的 tokens：使用豆包 API 本次调用返回的 completion_tokens（或 total_tokens 作为兜底）
-        const aiMsgTokens = response.usage
-          ? response.usage.completion_tokens || response.usage.total_tokens
-          : Math.ceil(aiReply.length / 1.8);
-        const aiMsg: ConversationMessage = {
-          id: uid(),
-          role: 'assistant',
-          content: aiReply,
-          ts: Date.now(),
-          tokens: aiMsgTokens,
-        };
-        setMessages((prev) => [...prev, aiMsg]);
-        // 收到 AI 回复后立即结束"正在思考"状态（与音频播报解耦）
-        setIsSending(false);
-
         if (response.cost) {
           setCost({
             callCount: response.cost.callCount,
@@ -247,15 +286,15 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         }
 
         // 播报逻辑：统一 before-setIsSpeaking(true) / after-setIsSpeaking(false)
-        if (aiReply) {
+        if (finalReply) {
           setIsSpeaking(true);
           try {
             if (isCapacitor()) {
-              await speakNativeOrFallback(aiReply);
+              await speakNativeOrFallback(finalReply);
             } else if (response.audioBase64) {
               await playAudio(response.audioBase64, response.audioMimeType || undefined);
             } else {
-              await speakWithBrowserTTS(aiReply);
+              await speakWithBrowserTTS(finalReply);
             }
           } finally {
             // 无论成功还是抛错，都重置状态

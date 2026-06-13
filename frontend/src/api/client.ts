@@ -145,6 +145,101 @@ export async function sendMultimodal(
   return json;
 }
 
+export interface MultimodalStreamHandlers {
+  onSummary?: (summary: SummaryInfo) => void;
+  onDelta?: (text: string) => void;
+  onDone?: (response: MultimodalResponse) => void;
+  onError?: (message: string) => void;
+}
+
+/** 调用多模态流式接口：实时接收 AI 文本片段，结束后返回完整元数据。 */
+export async function sendMultimodalStream(
+  payload: MultimodalRequest,
+  handlers: MultimodalStreamHandlers,
+  signal?: AbortSignal,
+): Promise<MultimodalResponse> {
+  const res = await fetch(`${API_BASE}/multimodal/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      detail = await res.text();
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`请求失败 (${res.status})：${detail || res.statusText}`);
+  }
+  if (!res.body) {
+    throw new Error('当前浏览器不支持读取流式响应。');
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  const finalResponseRef: { current?: MultimodalResponse } = {};
+
+  const handleBlock = (block: string) => {
+    const lines = block
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const eventLine = lines.find((line) => line.startsWith('event:'));
+    const eventName = eventLine ? eventLine.slice(6).trim() : 'message';
+    const dataText = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('\n');
+    if (!dataText) return;
+
+    const data = JSON.parse(dataText);
+    if (eventName === 'summary') {
+      handlers.onSummary?.(data as SummaryInfo);
+    } else if (eventName === 'delta') {
+      const text = typeof data?.text === 'string' ? data.text : '';
+      if (text) handlers.onDelta?.(text);
+    } else if (eventName === 'done') {
+      finalResponseRef.current = data as MultimodalResponse;
+      handlers.onDone?.(finalResponseRef.current);
+    } else if (eventName === 'error') {
+      const message = data?.error || '流式响应失败';
+      handlers.onError?.(message);
+      throw new Error(message);
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+
+    let sepIndex = buffer.indexOf('\n\n');
+    while (sepIndex >= 0) {
+      const block = buffer.slice(0, sepIndex).trim();
+      buffer = buffer.slice(sepIndex + 2);
+      if (block) handleBlock(block);
+      sepIndex = buffer.indexOf('\n\n');
+    }
+  }
+
+  buffer += decoder.decode();
+  const tail = buffer.trim();
+  if (tail) handleBlock(tail);
+
+  const finalResponse = finalResponseRef.current;
+  if (!finalResponse) {
+    throw new Error('流式响应结束但未收到完成事件。');
+  }
+  if (!finalResponse.ok || finalResponse.error) {
+    throw new Error(finalResponse.error || '后端返回失败');
+  }
+  return finalResponse;
+}
+
 /** 清除会话（非必需） */
 export async function clearSessionApi(sessionId: string): Promise<boolean> {
   try {
