@@ -1160,6 +1160,65 @@ textarea {
 }
 
 /* =========================================================
+ * 预算 / 质量模式
+ * ========================================================= */
+
+.quality-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quality-mode-card {
+  width: 100%;
+  min-height: 104px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease,
+    transform 0.08s ease;
+}
+
+.quality-mode-card:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.quality-mode-card--active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.22), var(--shadow-sm);
+}
+
+.quality-mode-card__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.quality-mode-card__desc {
+  flex: 1;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.quality-mode-card__meta {
+  font-size: 10.5px;
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================
  * 设置面板（按功能分块）
  * ========================================================= */
 
@@ -1495,8 +1554,16 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .quality-mode-grid {
+    grid-template-columns: 1fr;
+  }
+
   .preset-card {
     min-height: 44px;
+  }
+
+  .quality-mode-card {
+    min-height: 0;
   }
 
   .theme-toggle {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { MultimodalSettings } from '../api/client';
 import { SCENE_PRESETS } from '../presets/scenePresets';
+import { QUALITY_MODE_PRESETS } from '../presets/qualityModes';
 import type { CaptureResult } from '../video/frameSampler';
 
 interface VideoPreviewProps {
@@ -40,6 +41,15 @@ export function VideoPreview({
 }: VideoPreviewProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const update = (patch: Partial<MultimodalSettings>) => onSettingsChange({ ...settings, ...patch });
+  const applyQualityMode = (modeId: NonNullable<MultimodalSettings['qualityMode']>) => {
+    const mode = QUALITY_MODE_PRESETS.find((item) => item.id === modeId);
+    if (!mode) return;
+    onSettingsChange({
+      ...settings,
+      ...mode.settings,
+      qualityMode: mode.id,
+    });
+  };
   const adaptiveEnabled = settings.adaptiveImageQuality !== false;
   const qualityMin = settings.imageQualityMin ?? Math.max(0.3, settings.imageQuality - 0.35);
   const complexityLabel =
@@ -128,6 +138,37 @@ export function VideoPreview({
         className={`expand-panel ${settingsOpen ? 'expand-panel--open' : ''}`}
         hidden={!settingsOpen}
       >
+        {/* —— 预算 / 质量模式 —— */}
+        <div className="expand-panel__section">
+          <div className="expand-panel__section-title">预算 / 质量模式</div>
+          <div className="quality-mode-grid">
+            {QUALITY_MODE_PRESETS.map((mode) => {
+              const active = settings.qualityMode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  className={`quality-mode-card ${active ? 'quality-mode-card--active' : ''}`}
+                  onClick={() => applyQualityMode(mode.id)}
+                  aria-pressed={active}
+                >
+                  <span className="quality-mode-card__title">{mode.name}</span>
+                  <span className="quality-mode-card__desc">{mode.description}</span>
+                  <span className="quality-mode-card__meta">
+                    {mode.costHint} · {(mode.settings.frameIntervalMs / 1000).toFixed(1)}s · {mode.settings.imageSize}px · q
+                    {mode.settings.imageQualityMin?.toFixed(2)}-{mode.settings.imageQuality.toFixed(2)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <span className="field__hint">
+            选择模式会同时调整抽帧频率、分辨率、质量范围和摘要阈值；下方滑块仍可继续微调。
+          </span>
+        </div>
+
+        <div className="expand-panel__divider" />
+
         {/* —— 场景预设 —— */}
         <div className="expand-panel__section">
           <div className="expand-panel__section-title">场景预设</div>
