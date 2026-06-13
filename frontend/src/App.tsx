@@ -7,7 +7,7 @@ import { useASR } from './hooks/useASR';
 import { useCamera } from './hooks/useCamera';
 import { useConversation } from './hooks/useConversation';
 import type { MultimodalSettings } from './api/client';
-import { captureFrame } from './video/frameSampler';
+import { captureFrame, type CaptureResult } from './video/frameSampler';
 import { getScenePreset, DEFAULT_SCENE_PRESET_ID } from './presets/scenePresets';
 
 /**
@@ -31,11 +31,15 @@ export default function App() {
   const defaultPreset = getScenePreset(DEFAULT_SCENE_PRESET_ID);
   const [settings, setSettings] = useState<MultimodalSettings>({
     ...defaultPreset.settings,
+    adaptiveImageQuality: true,
+    imageQualityMin: Math.max(0.3, defaultPreset.settings.imageQuality - 0.35),
     scenePresetId: defaultPreset.id,
   });
   const [isRunning, setIsRunning] = useState(false);
   const [inputText, setInputText] = useState('');
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
+  const [previewFrame, setPreviewFrame] = useState<string | null>(null);
+  const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null);
 
   const { videoRef, isReady: cameraReady, error: cameraError, start: startCamera, stop: stopCamera } =
     useCamera();
@@ -46,6 +50,13 @@ export default function App() {
   useEffect(() => {
     currentFrameRef.current = currentFrame;
   }, [currentFrame]);
+
+  useEffect(() => {
+    if (!cameraReady) {
+      setPreviewFrame(null);
+      setLastCapture(null);
+    }
+  }, [cameraReady]);
 
   const {
     messages,
@@ -101,22 +112,30 @@ export default function App() {
     [isSpeaking, stopSpeaking],
   );
 
-  // 运行中：按 frameIntervalMs 周期抽帧，并在有变化时更新 currentFrame
+  // 摄像头开启后持续抽帧：未传输时用于右下角缩略图测试；传输中才更新对话使用的 currentFrame。
   useEffect(() => {
-    if (!isRunning) return;
+    if (!cameraReady) return;
     const id = window.setInterval(async () => {
       const video = videoRef.current;
-      if (!video || !cameraReady) return;
+      if (!video) return;
       try {
-        const { base64, changed, imageData } = await captureFrame(
+        const result = await captureFrame(
           video,
-          { imageSize: settings.imageSize, imageQuality: settings.imageQuality },
-          prevImageDataRef.current,
+          {
+            imageSize: settings.imageSize,
+            imageQuality: settings.imageQuality,
+            adaptiveImageQuality: settings.adaptiveImageQuality,
+            imageQualityMin: settings.imageQualityMin,
+          },
+          isRunning ? prevImageDataRef.current : null,
         );
-        if (changed) {
+        const { base64, changed, imageData } = result;
+        setPreviewFrame(base64);
+        if (isRunning && changed) {
           prevImageDataRef.current = imageData;
           setCurrentFrame(base64);
         }
+        setLastCapture(result);
       } catch {
         /* 抽帧失败忽略，下一帧继续 */
       }
@@ -184,13 +203,14 @@ export default function App() {
             isReady={cameraReady}
             error={cameraError}
             isRecording={isListening}
-            currentFrame={currentFrame}
+            currentFrame={previewFrame || currentFrame}
             cameraDisabled={!cameraReady}
             onToggleCamera={handleToggleCamera}
             settings={settings}
             onSettingsChange={setSettings}
             isRunning={isRunning}
             onToggleRunning={handleToggleRunning}
+            lastCapture={lastCapture}
           />
         </section>
 
