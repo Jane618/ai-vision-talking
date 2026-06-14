@@ -7,6 +7,8 @@ AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像
 
 项目重点覆盖三件事：视觉内容理解、自然语音交互、端云协同成本控制。前端负责摄像头预览、抽帧、压缩、语音输入、流式展示和播报；后端负责会话管理、对话摘要、成本统计和豆包多模态模型调用。
 
+设计与产品文档位于 `docs/` 目录，其中核心设计文档是 `docs/design.md`，产品需求见 `docs/product-prd.md`，技术方案见 `docs/technical-solution.md`，用户故事与成本控制说明见 `docs/user-stories-cost-control.md`。
+
 ## 当前能力
 
 | 能力 | 当前实现 |
@@ -141,10 +143,10 @@ ai-talking/
 │   ├── capacitor.config.ts
 │   └── package.json
 └── docs/
-    ├── technical-solution.md
-    ├── product-prd.md
-    ├── user-stories-cost-control.md
-    └── design.md
+    ├── design.md                     # 核心设计文档：用户故事、系统架构、成本控制、API 与部署说明
+    ├── product-prd.md                # 产品需求文档：产品目标、功能范围、场景、验收标准和埋点设计
+    ├── technical-solution.md         # 技术方案：前后端架构、数据流、流式接口、摘要和成本统计实现
+    └── user-stories-cost-control.md  # 用户故事与成本控制说明：故事状态、降本技巧状态和验证建议
 ```
 
 ## 快速开始
