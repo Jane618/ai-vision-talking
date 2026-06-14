@@ -54,6 +54,9 @@ export default function App() {
 
   useEffect(() => {
     if (!cameraReady) {
+      currentFrameRef.current = null;
+      prevImageDataRef.current = null;
+      setCurrentFrame(null);
       setPreviewFrame(null);
       setLastCapture(null);
     }
@@ -73,13 +76,13 @@ export default function App() {
     stopSpeaking,
   } = useConversation({
     settings,
-    getCurrentFrame: () => currentFrameRef.current || undefined,
+    getCurrentFrame: () => (cameraReady ? currentFrameRef.current || undefined : undefined),
   });
 
   const captureLatestFrameForSend = useCallback(async (): Promise<string | undefined> => {
     const video = videoRef.current;
     if (!cameraReady || !video) {
-      return currentFrameRef.current || undefined;
+      return undefined;
     }
 
     try {
@@ -102,7 +105,7 @@ export default function App() {
 
       return result.base64;
     } catch {
-      return currentFrameRef.current || undefined;
+      return cameraReady ? currentFrameRef.current || undefined : undefined;
     }
   }, [cameraReady, settings, videoRef]);
 
@@ -195,6 +198,11 @@ export default function App() {
 
   const handleToggleCamera = () => {
     if (cameraReady) {
+      currentFrameRef.current = null;
+      prevImageDataRef.current = null;
+      setCurrentFrame(null);
+      setPreviewFrame(null);
+      setLastCapture(null);
       stopCamera();
     } else {
       startCamera();

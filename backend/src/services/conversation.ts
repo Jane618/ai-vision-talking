@@ -19,10 +19,6 @@ import type {
 } from '../types';
 import { callDoubao, getDefaultSystemPrompt } from './doubao';
 
-/** 超过该数量的消息（对 user+assistant 为一轮）触发简单压缩 */
-const COMPRESS_AFTER_TURNS = 8;
-/** 简单压缩后保留的最近轮数 */
-const KEEP_RECENT_TURNS = 6;
 /** 触发智能摘要的默认 tokens 阈值 */
 const DEFAULT_SUMMARY_THRESHOLD_TOKENS = 8192;
 /** 摘要后保留的最近原始消息数（保持 4 轮 = 8 条消息） */
@@ -121,17 +117,17 @@ function estimateTokens(content: HistoryMessage['content']): number {
   if (typeof content === 'string') {
     return Math.ceil(content.length / CHARS_PER_TOKEN);
   }
-  // content 是多模态数组，只对其中的文本部分估算，忽略图像 token
-  let textLen = 0;
+  // content 是多模态数组：文本按字符估算，图片按固定 token 粗略估算。
+  // 注意：图片 token 本身已经是 token 数，不能再参与“字符 / 1.8”的换算。
+  let total = 0;
   for (const part of content) {
     if (part.type === 'text') {
-      textLen += part.text?.length ?? 0;
+      total += Math.ceil((part.text?.length ?? 0) / CHARS_PER_TOKEN);
     } else if (part.type === 'image_url') {
-      // 粗略估算：图像 token 成本通常远高于文本，给一个粗略值
-      textLen += 200;
+      total += 200;
     }
   }
-  return Math.ceil(textLen / CHARS_PER_TOKEN);
+  return total;
 }
 
 /**
@@ -151,7 +147,9 @@ export function appendHistory(
 ): void {
   conv.history.push(msg);
   conv.lastActiveAt = Date.now();
-  compressIfNeeded(conv);
+  // 不在这里做旧式“只保留最近几轮”的硬裁剪。
+  // 摘要逻辑会在请求前后按 token 阈值压缩历史；如果这里先裁剪，
+  // 历史 tokens 很难达到阈值，用户会感觉“对话摘要不生效”。
 }
 
 /** 将本轮使用量累计到会话成本 */
@@ -361,34 +359,6 @@ export function buildArkMessages(params: {
     messages.push({ role: 'user', content: userText || '你好' });
   }
   return messages;
-}
-
-/**
- * 压缩历史：当 user+assistant 轮数 >= COMPRESS_AFTER_TURNS 时，
- * 仅保留最近 KEEP_RECENT_TURNS 轮。
- * 注意：此压缩仅保留原始消息，不做任何摘要调用。
- * 它与摘要共存 — 摘要发生在调用之前，会把历史替换为摘要。
- */
-function compressIfNeeded(conv: Conversation): void {
-  const assistantCount = conv.history.filter((h) => h.role === 'assistant').length;
-  if (assistantCount >= COMPRESS_AFTER_TURNS) {
-    const keep: HistoryMessage[] = [];
-    let turnsKept = 0;
-    for (let i = conv.history.length - 1; i >= 0; i--) {
-      keep.unshift(conv.history[i]);
-      if (conv.history[i].role === 'assistant') {
-        turnsKept++;
-        if (turnsKept >= KEEP_RECENT_TURNS) break;
-      }
-    }
-    const removed = conv.history.length - keep.length;
-    if (removed > 0) {
-      console.log(
-        `[conversation] 压缩会话 ${conv.sessionId}: 原 ${conv.history.length} 条 -> 保留 ${keep.length} 条`,
-      );
-      conv.history = keep;
-    }
-  }
 }
 
 /** 浅拷贝成本（避免意外被外部修改） */

@@ -177,7 +177,7 @@ app.post('/api/multimodal/stream', async (req: Request, res: Response) => {
     const conv = getOrCreateSession(sessionId);
     const imageDataUrl = image ? normalizeImageDataUrl(image) : undefined;
 
-    const summaryApplied = await summarizeIfNeeded(conv, settings, {
+    let summaryApplied = await summarizeIfNeeded(conv, settings, {
       userText,
       imageDataUrl,
       systemPrompt: settings.systemPrompt,
@@ -233,6 +233,15 @@ app.post('/api/multimodal/stream', async (req: Request, res: Response) => {
       hasImage: false,
       timestamp: Date.now(),
     });
+
+    if (!summaryApplied) {
+      summaryApplied = await summarizeIfNeeded(conv, settings, {
+        systemPrompt: settings.systemPrompt,
+      });
+      if (summaryApplied) {
+        writeSse(res, 'summary', summaryApplied);
+      }
+    }
 
     writeSse(res, 'done', {
       ok: true,
@@ -291,7 +300,7 @@ app.post(
 
       // 🆕 先检查是否需要摘要（在构造 messages 之前，这样
       // 构造的历史会是摘要替换后的）。
-      const summaryApplied = await summarizeIfNeeded(conv, settings, {
+      let summaryApplied = await summarizeIfNeeded(conv, settings, {
         userText,
         imageDataUrl,
         systemPrompt: settings.systemPrompt,
@@ -340,6 +349,12 @@ app.post(
         hasImage: false,
         timestamp: Date.now(),
       });
+
+      if (!summaryApplied) {
+        summaryApplied = await summarizeIfNeeded(conv, settings, {
+          systemPrompt: settings.systemPrompt,
+        });
+      }
 
       let audioBase64: string | null = null;
       let audioMimeType: string | null = null;

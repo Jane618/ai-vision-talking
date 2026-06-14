@@ -140,14 +140,14 @@ export function ChatHistory({
               </label>
               <input
                 type="range"
-                min={2048}
+                min={1024}
                 max={16384}
-                step={1024}
+                step={512}
                 value={settings.summaryThresholdTokens || 8192}
                 onChange={(e) => update({ summaryThresholdTokens: Number(e.target.value) })}
               />
               <span className="field__hint">
-                2K ~ 16K tokens。阈值越小越频繁，更省 tokens；阈值越大越保留完整上下文。
+                1K ~ 16K tokens。阈值越小越频繁，更省 tokens；阈值越大越保留完整上下文。
               </span>
             </div>
           )}
