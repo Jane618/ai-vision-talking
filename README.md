@@ -1,5 +1,8 @@
 # AI Talking 多模态语音对话应用
 
+Demo视频链接：
+>通过网盘分享的文件：ai talking demo视频.mp4 链接: https://pan.baidu.com/s/1AnIdDJZVj-BaWeLjB3ZiMw?pwd=se1y
+
 AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像头与麦克风后，可以通过文字或语音向 AI 提问，AI 会结合当前摄像头画面进行理解，并以流式文字和语音播报回应。
 
 项目重点覆盖三件事：视觉内容理解、自然语音交互、端云协同成本控制。前端负责摄像头预览、抽帧、压缩、语音输入、流式展示和播报；后端负责会话管理、对话摘要、成本统计和豆包多模态模型调用。
@@ -20,7 +23,6 @@ AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像
 | 播报打断 | 用户输入文字、开启语音输入或说出停止类关键词时，中断当前播报 |
 | 对话摘要 | 历史上下文达到 token 阈值后自动摘要，降低长对话成本 |
 | token 状态栏 | 页面右上角展示调用次数、输入/输出 token、总 token、节省 token 和估算费用 |
-| 移动端支持 | 支持手机浏览器 HTTPS 访问，也保留 Capacitor 打包能力 |
 
 ## 技术栈
 
@@ -72,7 +74,6 @@ ai-talking/
     ├── technical-solution.md
     ├── product-prd.md
     ├── user-stories-cost-control.md
-    ├── mobile-capacitor.md
     └── design.md
 ```
 
@@ -185,7 +186,6 @@ SERVER_KEY_FILE=./certs/localhost-key.pem
 | [技术方案](./docs/technical-solution.md) | 系统架构、视觉理解、语音交互、后端方案、成本控制 |
 | [产品 PRD](./docs/product-prd.md) | 产品目标、功能范围、准备实现功能、埋点方案、验收标准 |
 | [用户故事与成本控制说明](./docs/user-stories-cost-control.md) | 用户故事实现情况、已采用和未实现的成本技巧 |
-| [移动端打包指南](./docs/mobile-capacitor.md) | 手机浏览器访问和 Capacitor 原生壳打包 |
 | [旧版设计文档](./docs/design.md) | 早期设计说明，部分内容可能与当前实现不完全一致 |
 
 ## 常用命令

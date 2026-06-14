@@ -264,16 +264,18 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     async (userText: string, image?: string) => {
       const text = (userText || '').trim();
       if (!text) return;
+      const currentImage = image ?? getCurrentFrame?.();
 
       // 估算用户消息的 tokens：文字 1.8 字/token，有画面额外估算 200 tokens
       const userMsgTokens =
-        Math.ceil(text.length / 1.8) + (image ? 200 : 0);
+        Math.ceil(text.length / 1.8) + (currentImage ? 200 : 0);
       const userMsg: ConversationMessage = {
         id: uid(),
         role: 'user',
         content: text,
         ts: Date.now(),
-        hasImage: !!image,
+        hasImage: !!currentImage,
+        image: currentImage || undefined,
         tokens: userMsgTokens,
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -283,7 +285,6 @@ export function useConversation(options: UseConversationOptions): UseConversatio
       setError(null);
 
       try {
-        const currentImage = image ?? getCurrentFrame?.();
         const aiMsgId = uid();
         let streamedReply = '';
         let aiMessageStarted = false;

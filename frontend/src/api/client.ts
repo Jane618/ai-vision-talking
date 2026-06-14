@@ -115,6 +115,8 @@ export interface ConversationMessage {
   content: string;
   ts: number;
   hasImage?: boolean;
+  /** 🆕 用户消息附带的缩略图（base64 data URL），用于点击放大查看 */
+  image?: string;
   /** 🆕 本条消息消耗/估算的 tokens（AI 为真实值，用户为估算） */
   tokens?: number;
 }

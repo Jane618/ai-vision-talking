@@ -50,6 +50,7 @@ export function ChatHistory({
   const summaryPanelRef = useRef<HTMLDivElement>(null);
   const summaryToggleRef = useRef<HTMLButtonElement>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   const update = (patch: Partial<MultimodalSettings>) => onSettingsChange({ ...settings, ...patch });
   const enableSummary = settings.enableSummary !== false;
@@ -74,6 +75,19 @@ export function ChatHistory({
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [summaryOpen]);
+
+  useEffect(() => {
+    if (!fullscreenImage) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setFullscreenImage(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [fullscreenImage]);
 
   return (
     <div className="card chat-history chat-history--with-input">
@@ -126,14 +140,14 @@ export function ChatHistory({
               </label>
               <input
                 type="range"
-                min={2048}
+                min={1024}
                 max={16384}
-                step={1024}
+                step={512}
                 value={settings.summaryThresholdTokens || 8192}
                 onChange={(e) => update({ summaryThresholdTokens: Number(e.target.value) })}
               />
               <span className="field__hint">
-                2K ~ 16K tokens。阈值越小越频繁，更省 tokens；阈值越大越保留完整上下文。
+                1K ~ 16K tokens。阈值越小越频繁，更省 tokens；阈值越大越保留完整上下文。
               </span>
             </div>
           )}
@@ -162,11 +176,25 @@ export function ChatHistory({
           const isUser = m.role === 'user';
           return (
             <div key={m.id} className={`bubble-row ${isUser ? 'bubble-row--right' : 'bubble-row--left'}`}>
+              {isUser && m.image && (
+                <button
+                  type="button"
+                  className="bubble__thumbnail-btn"
+                  onClick={() => setFullscreenImage(m.image as string)}
+                  title="点击查看大图"
+                  aria-label="查看这条消息发送给 AI 的画面"
+                >
+                  <img
+                    src={m.image}
+                    alt="AI 看到的画面"
+                    className="bubble__thumbnail"
+                  />
+                </button>
+              )}
               <div className={`bubble ${isUser ? 'bubble--user' : 'bubble--assistant'}`}>
                 <div className="bubble__meta">
                   <span>{isUser ? '你' : 'AI'}</span>
                   <span className="bubble__time">{formatTime(m.ts)}</span>
-                  {m.hasImage && <span className="bubble__tag">含画面</span>}
                   {m.tokens && m.tokens > 0 && (
                     <span className="bubble__tag bubble__tag--tokens">
                       {isUser ? '≈ ' : ''}
@@ -223,6 +251,22 @@ export function ChatHistory({
           <button type="button" className="btn btn--primary" onClick={input.onSend} disabled={input.isInputLocked}>
             发送
           </button>
+        </div>
+      )}
+
+      {fullscreenImage && (
+        <div
+          className="image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="全屏查看发送画面"
+          onClick={() => setFullscreenImage(null)}
+        >
+          <img
+            src={fullscreenImage}
+            alt="全屏查看发送给 AI 的画面"
+            className="image-lightbox__image"
+          />
         </div>
       )}
     </div>

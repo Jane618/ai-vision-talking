@@ -14,8 +14,6 @@ interface VideoPreviewProps {
   onToggleCamera?: () => void;
   settings: MultimodalSettings;
   onSettingsChange: (next: MultimodalSettings) => void;
-  isRunning: boolean;
-  onToggleRunning: () => void;
   lastCapture?: CaptureResult | null;
 }
 
@@ -23,7 +21,7 @@ interface VideoPreviewProps {
  * 左侧视频预览模块：
  * - 顶部：标题 + 录音/就绪指示 + 「画面设置」按钮
  * - 中部：摄像头画面 + 右下角抽帧缩略图
- * - 底部：摄像头/传输控制 + 预算质量和场景下拉选择
+ * - 底部：摄像头控制 + 预算质量和场景下拉选择
  * - 可展开区：图像参数设置
  */
 export function VideoPreview({
@@ -36,8 +34,6 @@ export function VideoPreview({
   onToggleCamera,
   settings,
   onSettingsChange,
-  isRunning,
-  onToggleRunning,
   lastCapture,
 }: VideoPreviewProps) {
   const settingsPanelRef = useRef<HTMLDivElement>(null);
@@ -105,9 +101,6 @@ export function VideoPreview({
           </button>
         </div>
         <div className="video-preview__indicators">
-          <span className={`badge ${isRunning ? 'badge--ok' : 'badge--off'}`}>
-            {isRunning ? '传输中' : '已暂停'}
-          </span>
           {isRecording && (
             <span className="recording-badge" aria-label="正在录音">
               <span className="recording-dot" /> 录音中
@@ -141,13 +134,6 @@ export function VideoPreview({
               {cameraDisabled ? '启用摄像头' : '停用摄像头'}
             </button>
           )}
-          <button
-            type="button"
-            className={`btn ${isRunning ? 'btn--warning' : 'btn--primary'}`}
-            onClick={onToggleRunning}
-          >
-            {isRunning ? '暂停传输' : '开始传输画面'}
-          </button>
           <label className="transport-select-field">
             <span>质量</span>
             <select
@@ -179,7 +165,7 @@ export function VideoPreview({
             </select>
           </label>
         </div>
-        <span className="hint">画面变化时自动抽取并发送给多模态模型。</span>
+        <span className="hint">发送消息时自动抓取当前画面，并展示在用户消息旁。</span>
       </div>
 
       <div

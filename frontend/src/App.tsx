@@ -37,7 +37,6 @@ export default function App() {
     qualityMode: defaultQualityMode.id,
     scenePresetId: defaultPreset.id,
   });
-  const [isRunning, setIsRunning] = useState(false);
   const [inputText, setInputText] = useState('');
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
   const [previewFrame, setPreviewFrame] = useState<string | null>(null);
@@ -55,6 +54,9 @@ export default function App() {
 
   useEffect(() => {
     if (!cameraReady) {
+      currentFrameRef.current = null;
+      prevImageDataRef.current = null;
+      setCurrentFrame(null);
       setPreviewFrame(null);
       setLastCapture(null);
     }
@@ -74,13 +76,13 @@ export default function App() {
     stopSpeaking,
   } = useConversation({
     settings,
-    getCurrentFrame: () => currentFrameRef.current || undefined,
+    getCurrentFrame: () => (cameraReady ? currentFrameRef.current || undefined : undefined),
   });
 
   const captureLatestFrameForSend = useCallback(async (): Promise<string | undefined> => {
     const video = videoRef.current;
     if (!cameraReady || !video) {
-      return currentFrameRef.current || undefined;
+      return undefined;
     }
 
     try {
@@ -103,7 +105,7 @@ export default function App() {
 
       return result.base64;
     } catch {
-      return currentFrameRef.current || undefined;
+      return cameraReady ? currentFrameRef.current || undefined : undefined;
     }
   }, [cameraReady, settings, videoRef]);
 
@@ -146,7 +148,7 @@ export default function App() {
     [isSpeaking, stopSpeaking],
   );
 
-  // 摄像头开启后持续抽帧：未传输时用于右下角缩略图测试；传输中才更新对话使用的 currentFrame。
+  // 摄像头开启后持续抽帧，用于右下角本地预览缩略图；真正发送时会即时抓取当前画面。
   useEffect(() => {
     if (!cameraReady) return;
     const id = window.setInterval(async () => {
@@ -161,21 +163,17 @@ export default function App() {
             adaptiveImageQuality: settings.adaptiveImageQuality,
             imageQualityMin: settings.imageQualityMin,
           },
-          isRunning ? prevImageDataRef.current : null,
+          null,
         );
-        const { base64, changed, imageData } = result;
+        const { base64 } = result;
         setPreviewFrame(base64);
-        if (isRunning && changed) {
-          prevImageDataRef.current = imageData;
-          setCurrentFrame(base64);
-        }
         setLastCapture(result);
       } catch {
         /* 抽帧失败忽略，下一帧继续 */
       }
     }, settings.frameIntervalMs);
     return () => window.clearInterval(id);
-  }, [isRunning, settings, videoRef, cameraReady]);
+  }, [settings, videoRef, cameraReady]);
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
@@ -184,10 +182,6 @@ export default function App() {
     const frameForSend = await captureLatestFrameForSend();
     await sendMessage(text, frameForSend);
   }, [captureLatestFrameForSend, inputText, sendMessage]);
-
-  const handleToggleRunning = () => {
-    setIsRunning((v) => !v);
-  };
 
   const handleToggleListening = () => {
     if (isInputLocked) return;
@@ -204,6 +198,11 @@ export default function App() {
 
   const handleToggleCamera = () => {
     if (cameraReady) {
+      currentFrameRef.current = null;
+      prevImageDataRef.current = null;
+      setCurrentFrame(null);
+      setPreviewFrame(null);
+      setLastCapture(null);
       stopCamera();
     } else {
       startCamera();
@@ -242,8 +241,6 @@ export default function App() {
             onToggleCamera={handleToggleCamera}
             settings={settings}
             onSettingsChange={setSettings}
-            isRunning={isRunning}
-            onToggleRunning={handleToggleRunning}
             lastCapture={lastCapture}
           />
         </section>
