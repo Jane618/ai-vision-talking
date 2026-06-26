@@ -1,7 +1,5 @@
 # AI Talking 多模态语音对话应用
 
-Demo视频链接：
->通过网盘分享的文件：ai talking demo视频.mp4 链接: https://pan.baidu.com/s/1AnIdDJZVj-BaWeLjB3ZiMw?pwd=se1y
 
 AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像头与麦克风后，可以通过文字或语音向 AI 提问，AI 会结合当前摄像头画面进行理解，并以流式文字和语音播报回应。
 
