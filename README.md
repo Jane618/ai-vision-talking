@@ -1,11 +1,10 @@
 # AI Talking 多模态语音对话应用
 
-
 AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像头与麦克风后，可以通过文字或语音向 AI 提问，AI 会结合当前摄像头画面进行理解，并以流式文字和语音播报回应。
 
 项目重点覆盖三件事：视觉内容理解、自然语音交互、端云协同成本控制。前端负责摄像头预览、抽帧、压缩、语音输入、流式展示和播报；后端负责会话管理、对话摘要、成本统计和豆包多模态模型调用。
 
-设计与产品文档位于 `docs/` 目录，其中核心设计文档是 `docs/design.md`，产品需求见 `docs/product-prd.md`，技术方案见 `docs/technical-solution.md`，用户故事与成本控制说明见 `docs/user-stories-cost-control.md`。
+技术方案见 `docs/technical-solution-v2.md`。
 
 ## 当前能力
 
@@ -24,23 +23,27 @@ AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像
 | 播报打断 | 用户输入文字、开启语音输入或说出停止类关键词时，中断当前播报 |
 | 对话摘要 | 历史上下文达到 token 阈值后自动摘要，降低长对话成本 |
 | token 状态栏 | 页面右上角展示调用次数、输入/输出 token、总 token、节省 token 和估算费用 |
+| 会话持久化 | 历史会话存储在 PostgreSQL，支持按用户 ID 查询完整对话记录 |
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 前端 | Vite、React、TypeScript、原生 CSS |
+| 前端 | Vite、React 19、TypeScript、原生 CSS |
 | 摄像头 | `navigator.mediaDevices.getUserMedia` + Canvas 抽帧 |
 | 语音输入 | Web Speech API / Capacitor Speech Recognition |
 | 语音播报 | 浏览器 TTS / Capacitor Text to Speech |
-| 后端 | Node.js、Express、TypeScript |
+| 后端 | Python 3.10+、FastAPI、Uvicorn |
+| 数据校验 | Pydantic v2、pydantic-settings |
+| HTTP 客户端 | httpx（异步，支持流式响应） |
+| 会话存储 | Redis（实时会话，Hash + TTL 自动过期） |
+| 历史存储 | PostgreSQL（JSONB 存储多模态消息内容） |
 | 模型 | 火山引擎 Ark / 豆包多模态模型 |
-| 流式响应 | Server-Sent Events |
-| 会话管理 | 后端内存会话，生产可替换为 Redis |
+| 流式响应 | Server-Sent Events（asyncio.Queue + StreamingResponse） |
+| 日志 | Loguru |
+| 容器化 | Docker、Docker Compose、Nginx 反向代理 |
 
 ## 第三方依赖与外部能力
-
-项目使用的第三方库、框架和外部服务如下。未列在本节的业务逻辑、界面组合和成本控制策略均属于本项目实现。
 
 ### 前端运行时依赖
 
@@ -65,20 +68,21 @@ AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像
 
 | 依赖 | 用途 |
 |---|---|
-| `express` | 提供 HTTP API、SSE 接口和静态资源托管 |
-| `cors` | 开发环境跨域访问支持 |
-| `dotenv` | 读取 `.env` 环境变量 |
-| `node-fetch` | 后端调用火山引擎 Ark / 豆包模型与 TTS 接口 |
-| `uuid` | 生成会话与消息标识 |
+| `fastapi` | Web 框架，原生 async，自动 OpenAPI 文档 |
+| `uvicorn[standard]` | ASGI 服务器（含 uvloop + httptools） |
+| `httpx` | 异步 HTTP 客户端，调用火山引擎 Ark API 和 TTS 接口 |
+| `pydantic`、`pydantic-settings` | 请求/响应数据校验和环境变量配置 |
+| `redis` (redis-py) | Redis 异步客户端，会话读写 |
+| `asyncpg` | PostgreSQL 异步驱动，历史会话存储 |
+| `loguru` | 结构化日志 |
+| `python-dotenv` | 读取 `.env` 环境变量 |
 
 ### 后端开发依赖
 
 | 依赖 | 用途 |
 |---|---|
-| `typescript` | 后端 TypeScript 编译 |
-| `ts-node`、`ts-node-dev` | 本地开发时直接运行 TypeScript 并支持自动重启 |
-| `rimraf` | 清理构建产物 |
-| `@types/node`、`@types/express`、`@types/cors`、`@types/node-fetch`、`@types/uuid` | TypeScript 类型声明 |
+| `pytest`、`pytest-asyncio` | 单元测试 + 集成测试 |
+| `ruff` | 代码检查 + 格式化（替代 ESLint + Prettier） |
 
 ### 浏览器与云服务能力
 
@@ -92,8 +96,6 @@ AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像
 | 服务端 TTS | 火山引擎 TTS，可选 | 在浏览器或原生 TTS 不可用时提供语音合成 |
 
 ## 原创功能说明
-
-本项目的原创工作主要集中在应用层编排、交互设计和成本控制策略，不包括底层大模型、浏览器原生 API、Capacitor 插件或第三方框架本身。
 
 | 模块 | 原创实现内容 |
 |---|---|
@@ -111,97 +113,143 @@ AI Talking 是一款基于 Web 的多模态 AI 对话应用。用户打开摄像
 
 ```text
 ai-talking/
-├── backend/
+├── backend-python/                 # Python 后端（FastAPI）
+│   ├── app/
+│   │   ├── main.py                 # FastAPI 入口，lifespan 初始化，路由注册
+│   │   ├── config/
+│   │   │   └── settings.py         # Pydantic Settings 环境变量配置
+│   │   ├── core/
+│   │   │   ├── redis.py            # Redis 异步连接池（单例）
+│   │   │   ├── database.py         # PostgreSQL 连接池（优雅降级）
+│   │   │   └── sse.py              # SSE 格式辅助函数
+│   │   ├── models/
+│   │   │   ├── schemas.py          # Pydantic 请求/响应模型
+│   │   │   └── db_models.py        # PostgreSQL ORM 模型
+│   │   ├── api/
+│   │   │   ├── health.py           # GET /api/health
+│   │   │   ├── multimodal.py       # POST /api/multimodal, /api/multimodal/stream
+│   │   │   ├── session.py          # POST /api/clear
+│   │   │   └── conversations.py    # GET/POST /api/conversations/*
+│   │   ├── services/
+│   │   │   ├── session.py          # Redis 会话管理（Hash + TTL）
+│   │   │   ├── conversation.py     # 对话摘要、消息构建、token 拆解
+│   │   │   ├── cost.py             # 成本累计与快照
+│   │   │   ├── doubao.py           # 豆包多模态 API 调用（流式/非流式）
+│   │   │   └── tts.py              # 火山引擎 TTS 语音合成
+│   │   └── repositories/
+│   │       └── conversation.py     # PostgreSQL 历史会话 CRUD
+│   ├── scripts/
+│   │   └── init_db.sql             # 数据库 DDL（6 张表）
+│   ├── Dockerfile                   # 多阶段构建（Gunicorn + UvicornWorker）
+│   ├── docker-compose.yml           # backend + Redis + PostgreSQL
+│   ├── nginx/
+│   │   └── nginx.conf              # 反向代理 + SSE 禁用缓冲
+│   ├── pyproject.toml               # Python 项目配置
+│   ├── .env.example                # 环境变量示例
+│   └── .python-version
+├── frontend/                        # React 前端
 │   ├── src/
-│   │   ├── index.ts              # Express 入口、API 路由、静态资源托管、SSE 流式接口
-│   │   ├── types.ts              # 后端请求/响应与会话类型
-│   │   └── services/
-│   │       ├── conversation.ts   # 会话历史、摘要、token 拆解、成本统计
-│   │       ├── doubao.ts         # 豆包多模态模型调用与流式输出
-│   │       └── tts.ts            # 火山引擎 TTS，可选
-│   ├── .env.example
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx               # 页面主状态与摄像头/对话流程编排
-│   │   ├── api/client.ts         # API 类型与 fetch/SSE 客户端
+│   │   ├── App.tsx                 # 页面主状态与摄像头/对话流程编排
+│   │   ├── api/client.ts           # API 类型与 fetch/SSE 客户端
 │   │   ├── components/
-│   │   │   ├── VideoPreview.tsx  # 摄像头、画面设置浮层、场景预设、缩略图
-│   │   │   ├── ChatHistory.tsx   # 对话历史、摘要设置、输入栏
-│   │   │   ├── CostStats.tsx     # 右上角 token 状态栏
-│   │   │   └── ThemeToggle.tsx   # 深浅色主题切换
+│   │   │   ├── VideoPreview.tsx    # 摄像头、画面设置浮层、场景预设、缩略图
+│   │   │   ├── ChatHistory.tsx     # 对话历史、摘要设置、输入栏
+│   │   │   ├── CostStats.tsx       # 右上角 token 状态栏
+│   │   │   └── ThemeToggle.tsx     # 深浅色主题切换
 │   │   ├── hooks/
-│   │   │   ├── useASR.ts         # 语音识别
-│   │   │   ├── useCamera.ts      # 摄像头控制
-│   │   │   └── useConversation.ts # 流式对话、播报队列、输入锁定
+│   │   │   ├── useASR.ts           # 语音识别
+│   │   │   ├── useCamera.ts        # 摄像头控制
+│   │   │   └── useConversation.ts  # 流式对话、播报队列、输入锁定
 │   │   ├── presets/scenePresets.ts
-│   │   ├── video/frameSampler.ts # 抽帧、变化检测、复杂度分析、自适应压缩
-│   │   └── platform.ts           # Web / Capacitor 平台适配
+│   │   ├── video/frameSampler.ts   # 抽帧、变化检测、复杂度分析、自适应压缩
+│   │   └── platform.ts             # Web / Capacitor 平台适配
 │   ├── .env.example
 │   ├── capacitor.config.ts
+│   ├── vite.config.ts              # Vite 配置（API 代理到后端）
 │   └── package.json
-└── docs/
-    ├── design.md                     # 核心设计文档：用户故事、系统架构、成本控制、API 与部署说明
-    ├── product-prd.md                # 产品需求文档：产品目标、功能范围、场景、验收标准和埋点设计
-    ├── technical-solution.md         # 技术方案：前后端架构、数据流、流式接口、摘要和成本统计实现
-    └── user-stories-cost-control.md  # 用户故事与成本控制说明：故事状态、降本技巧状态和验证建议
+├── start-all.ps1                    # 一键启动脚本（Redis + 后端 + 前端）
+├── docs/
+│   ├── technical-solution-v2.md    # 技术方案 v2（Node.js -> Python 迁移）
+│   ├── design.md                   # 核心设计文档
+│   └── product-prd.md              # 产品需求文档
+└── README.md
 ```
 
 ## 快速开始
 
-### 准备模型配置
+### 前置依赖
 
-在火山引擎方舟控制台准备多模态模型接入点，并获取：
+- Python 3.10+
+- Node.js 18+
+- Redis（Windows 可通过 [Memurai](https://www.memurai.com/) 或 WSL 安装）
+- PostgreSQL 15+（可选，未配置时历史会话功能不可用）
 
-- `ARK_API_KEY`
-- `ARK_MODEL_ENDPOINT`
-
-如果要使用服务端 TTS，再配置火山引擎 TTS 相关变量。未配置 TTS 时，前端会使用浏览器或原生 TTS 回退。
-
-### 安装依赖
+### 安装与配置
 
 ```powershell
-cd backend
+# 1. 克隆项目
+git clone <repo-url>
+cd ai-talking
+
+# 2. 安装前端依赖
+cd frontend
 npm install
+cd ..
 
-cd ..\frontend
-npm install
-```
+# 3. 安装后端依赖
+cd backend-python
+pip install -e ".[dev]"
+cd ..
 
-### 配置环境变量
-
-复制示例环境变量文件：
-
-```powershell
-cd backend
-Copy-Item .env.example .env
-
-cd ..\frontend
+# 4. 配置后端环境变量
+cd backend-python
 Copy-Item .env.example .env
 ```
 
-后端 `backend/.env` 至少需要填写：
+后端 `backend-python/.env` 至少需要填写：
 
 ```env
-SERVER_PORT=3001
-SERVER_HOST=0.0.0.0
 ARK_API_KEY=your_ark_api_key_here
 ARK_MODEL_ENDPOINT=your_ark_model_endpoint_here
 ```
 
-前端开发模式通常可以保持 `VITE_API_BASE_URL=` 为空，由 Vite 代理转发到后端。手机浏览器或 Capacitor App 访问时，需要填写可从手机访问的 HTTPS 地址，例如：
+可选配置：
 
 ```env
-VITE_API_BASE_URL=https://192.168.1.10:3001/api
+# Redis（默认 localhost:6379）
+REDIS_URL=redis://localhost:6379/0
+
+# PostgreSQL（可选，未配置时历史会话功能不可用）
+DATABASE_URL=postgresql://user:password@localhost:5432/ai_talking
+
+# TTS（可选，未配置时前端使用浏览器 TTS）
+TTS_ACCESS_KEY=your_tts_access_key
+TTS_APP_KEY=your_tts_app_key
+```
+
+前端开发模式 `VITE_API_BASE_URL` 保持为空，由 Vite 代理转发到后端。手机浏览器或 Capacitor App 访问时需填写后端地址：
+
+```env
+VITE_API_BASE_URL=https://192.168.1.10:8001/api
 ```
 
 ### 本地开发启动
 
+**方式一：一键启动（推荐）**
+
+```powershell
+.\start-all.ps1
+```
+
+该脚本会依次检查并启动 Redis、后端（8001 端口）和前端（5173 端口）。
+
+**方式二：手动启动**
+
 终端 1 启动后端：
 
 ```powershell
-cd backend
-npm run dev
+cd backend-python
+uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
 终端 2 启动前端：
@@ -213,25 +261,29 @@ npm run dev
 
 桌面浏览器打开 `http://localhost:5173`，允许摄像头和麦克风权限后即可使用。
 
-## 后端托管前端
+## API 接口
 
-后端可以托管 `frontend/dist`，适合手机或局域网演示时只暴露一个 HTTPS 入口。
+| 接口 | 方法 | 用途 | SSE |
+|---|---|---|---|
+| `/api/health` | GET | 健康检查，返回服务状态、会话数量、TTS 配置 | - |
+| `/api/multimodal` | POST | 多模态对话（非流式），返回完整回复 + 音频 + token 统计 | - |
+| `/api/multimodal/stream` | POST | 多模态对话（流式 SSE），实时返回文本片段 + 完成事件 | Yes |
+| `/api/clear` | POST | 清除指定会话 | - |
+| `/api/conversations` | GET | 获取用户历史会话列表 | - |
+| `/api/conversations/{id}/messages` | GET | 获取指定会话的消息记录 | - |
+
+SSE 流式事件类型：`delta`（文本片段）、`summary`（摘要结果）、`done`（完成）、`error`（异常）。
+
+## Docker 部署
 
 ```powershell
-cd frontend
-npm run build
-
-cd ..\backend
-npm run build
-npm start
+cd backend-python
+docker compose up -d
 ```
 
-如需手机访问摄像头和麦克风，请使用 HTTPS。后端支持通过以下变量配置证书：
+包含服务：FastAPI 后端、Redis、PostgreSQL、Nginx 反向代理。
 
-```env
-SERVER_CERT_FILE=./certs/localhost.pem
-SERVER_KEY_FILE=./certs/localhost-key.pem
-```
+Nginx 已配置 SSE 禁用缓冲（`X-Accel-Buffering: no`）和 WebSocket 支持。
 
 ## 成本控制策略
 
@@ -253,10 +305,9 @@ SERVER_KEY_FILE=./certs/localhost-key.pem
 
 | 文档 | 说明 |
 |---|---|
-| [技术方案](./docs/technical-solution.md) | 系统架构、视觉理解、语音交互、后端方案、成本控制 |
-| [产品 PRD](./docs/product-prd.md) | 产品目标、功能范围、准备实现功能、埋点方案、验收标准 |
-| [用户故事与成本控制说明](./docs/user-stories-cost-control.md) | 用户故事实现情况、已采用和未实现的成本技巧 |
-| [旧版设计文档](./docs/design.md) | 早期设计说明，部分内容可能与当前实现不完全一致 |
+| [技术方案 v2](./docs/technical-solution-v2.md) | Node.js -> Python 迁移技术方案，包含架构、API、SSE、会话、摘要、成本、数据库、部署 |
+| [产品 PRD](./docs/product-prd.md) | 产品目标、功能范围、场景、验收标准和埋点设计 |
+| [核心设计文档](./docs/design.md) | 用户故事、系统架构、成本控制、API 与部署说明 |
 
 ## 常用命令
 
@@ -265,18 +316,25 @@ SERVER_KEY_FILE=./certs/localhost-key.pem
 cd frontend
 npm run build
 
-# 后端构建
-cd backend
-npm run build
+# 后端开发启动（热重载）
+cd backend-python
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
 # 后端生产启动
-npm start
+cd backend-python
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8001
+
+# 代码检查
+cd backend-python
+ruff check app/
+ruff format app/
 ```
 
 ## 注意事项
 
 - 摄像头和麦克风在桌面本地 `localhost` 可用；手机或生产环境必须使用 HTTPS。
-- 后端 API Key 只放在 `backend/.env`，不要暴露到前端代码。
+- 后端 API Key 只放在 `backend-python/.env`，不要暴露到前端代码或提交到版本控制。
 - 前端发送给模型的是抽帧后的 JPEG 图片，不是连续视频流。
 - 右下角缩略图是本地抽帧预览；用户发送文本或语音句子结束时，会重新抓取最新帧用于本轮对话。
-- 当前会话状态存储在后端内存中，生产多实例部署建议替换为 Redis。
+- 会话数据存储在 Redis（实时读写，10 分钟 TTL），历史会话存储在 PostgreSQL（可选，未配置时优雅降级）。
+- redis-py 5.x 需要 Redis 6.2+（HELLO 命令），旧版 Redis 请安装 `redis[hiredis]<5`。
