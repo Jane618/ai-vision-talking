@@ -330,6 +330,57 @@ ruff check app/
 ruff format app/
 ```
 
+## 移动端适配
+
+### Web 手机浏览器
+
+项目支持手机浏览器访问，≤640px 自动切换为移动端布局：
+
+- **Tab 切换**：摄像头和对话通过顶部 Tab 切换，单栏全宽显示
+- **固定输入栏**：底部始终可见语音按钮、输入框和发送按钮
+- **精简统计栏**：一行显示"调用次数 · tokens · 费用"
+- **触摸适配**：按钮 ≥44px 触摸目标，字号 ≥16px 避免 iOS 自动缩放
+- **安全区适配**：支持 iPhone 刘海屏和底部安全区
+- **动态视口**：使用 `100svh` 避免浏览器地址栏抖动
+
+桌面端（>660px）保持双栏布局不变。
+
+### Capacitor 原生打包
+
+项目已配置 Capacitor 8.x，支持打包为 Android/iOS App。
+
+```powershell
+cd frontend
+
+# 构建前端
+npm run build
+
+# 添加 Android 平台
+npx cap add android
+
+# 同步 Web 资源到原生项目
+npx cap sync android
+
+# 用 Android Studio 打开
+npx cap open android
+```
+
+打包前需要配置后端地址。在 `capacitor.config.ts` 中取消 `server.url` 注释并填入局域网 IP：
+
+```typescript
+server: {
+  url: 'http://192.168.1.10:8001',
+}
+```
+
+### PWA 支持
+
+项目包含 `manifest.json`，可添加到手机主屏幕获得类 App 体验。需要准备应用图标（192px 和 512px）放入 `public/icons/` 目录。
+
+## 未来优化
+
+- **扑克牌叠放滑动切换**：摄像头/对话面板做成可左右滑动的卡片堆叠，带物理弹性动画
+
 ## 注意事项
 
 - 摄像头和麦克风在桌面本地 `localhost` 可用；手机或生产环境必须使用 HTTPS。

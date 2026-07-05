@@ -133,7 +133,7 @@ if (Test-PortListen $BackendPort) {
 
 $uvicornPath = Join-Path $BackendDir ".venv\Scripts\uvicorn.exe"
 $backendProc = Start-Process -FilePath $uvicornPath `
-    -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", $BackendPort, "--reload" `
+    -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", $BackendPort `
     -WorkingDirectory $BackendDir -WindowStyle Hidden -PassThru
 $global:Processes += $backendProc
 Write-Ok "后端进程已启动 (PID: $($backendProc.Id))"
@@ -173,16 +173,11 @@ if (Test-PortListen $FrontendPort) {
 
 $npmPath = (Get-Command "npm" -ErrorAction SilentlyContinue).Source
 if (-not $npmPath) { $npmPath = "npm.cmd" }
-$frontendProc = Start-Process -FilePath $npmPath `
-    -ArgumentList "run", "dev" `
+# 使用 cmd.exe /c 包装，确保进程在 vite 运行期间不会退出
+$frontendCmd = "cd /d `"$FrontendDir`" && npm run dev"
+$frontendProc = Start-Process -FilePath "cmd.exe" `
+    -ArgumentList "/c", $frontendCmd `
     -WorkingDirectory $FrontendDir -PassThru -WindowStyle Hidden
-Start-Sleep -Seconds 1
-if ($frontendProc.HasExited -and $frontendProc.ExitCode -ne 0) {
-    Write-Err "前端进程启动失败 (ExitCode: $($frontendProc.ExitCode))，尝试用 cmd 启动..."
-    $frontendProc = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "cd /d `"$FrontendDir`" && npm run dev" `
-        -WorkingDirectory $FrontendDir -PassThru -WindowStyle Hidden
-}
 $global:Processes += $frontendProc
 Write-Ok "前端进程已启动 (PID: $($frontendProc.Id))"
 
