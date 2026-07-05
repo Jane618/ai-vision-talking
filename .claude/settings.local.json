@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"./start-all.ps1\")",
+      "Bash(curl *)",
+      "Bash(.venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001)",
+      "Bash(powershell *)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

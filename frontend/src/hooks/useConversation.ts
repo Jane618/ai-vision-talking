@@ -150,6 +150,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   const speechBufferRef = useRef('');
   const speechPlayingRef = useRef(false);
   const speechRunIdRef = useRef(0);
+  const speechStoppedRef = useRef(false);
 
   // 组件挂载：创建 <audio> 元素用于播放后端返回的 base64 音频
   useEffect(() => {
@@ -254,7 +255,9 @@ export function useConversation(options: UseConversationOptions): UseConversatio
 
       if (sentences.length > 0) {
         speechQueueRef.current.push(...sentences);
-        void processSpeechQueue();
+        if (!speechStoppedRef.current) {
+          void processSpeechQueue();
+        }
       }
     },
     [processSpeechQueue],
@@ -265,6 +268,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
       const text = (userText || '').trim();
       if (!text) return;
       const currentImage = image ?? getCurrentFrame?.();
+      speechStoppedRef.current = false;
 
       // 估算用户消息的 tokens：文字 1.8 字/token，有画面额外估算 200 tokens
       const userMsgTokens =
@@ -438,6 +442,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     speechQueueRef.current = [];
     speechBufferRef.current = '';
     speechPlayingRef.current = false;
+    speechStoppedRef.current = true;
     stopSpeakingCore(audioRef.current);
     setIsSpeaking(false);
   }, []);
@@ -455,6 +460,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     speechQueueRef.current = [];
     speechBufferRef.current = '';
     speechPlayingRef.current = false;
+    speechStoppedRef.current = true;
     stopSpeakingCore(audioRef.current);
     setIsSpeaking(false);
   }, [sessionId]);

@@ -38,6 +38,15 @@ export default function App() {
     scenePresetId: defaultPreset.id,
   });
   const [inputText, setInputText] = useState('');
+  const [mobileTab, setMobileTab] = useState<'camera' | 'chat'>('chat');
+
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
   const [currentFrame, setCurrentFrame] = useState<string | null>(null);
   const [previewFrame, setPreviewFrame] = useState<string | null>(null);
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null);
@@ -216,7 +225,109 @@ export default function App() {
     }
   };
 
-  return (
+  return isMobile ? (
+    <div className="app app--mobile">
+      <header className="app__header">
+        <div className="app__header-left" />
+        <div className="app__header-center">
+          <h1 className="app__title">AI Talking</h1>
+        </div>
+        <div className="app__header-right">
+          <CostStats cost={cost} sessionId={sessionId} />
+          <ThemeToggle />
+        </div>
+      </header>
+
+      {/* Tab 栏 */}
+      <div className="mobile-tabs">
+        <button
+          className={`mobile-tabs__btn ${mobileTab === 'camera' ? 'mobile-tabs__btn--active' : ''}`}
+          onClick={() => setMobileTab('camera')}
+        >
+          摄像头
+        </button>
+        <button
+          className={`mobile-tabs__btn ${mobileTab === 'chat' ? 'mobile-tabs__btn--active' : ''}`}
+          onClick={() => setMobileTab('chat')}
+        >
+          对话
+        </button>
+      </div>
+
+      {/* 精简统计栏 */}
+      <div className="cost-stats--compact">
+        <span>{cost.callCount}次</span>
+        <span className="cost-stats--compact__sep">·</span>
+        <span>{cost.totalTokens}tok</span>
+        <span className="cost-stats--compact__sep">·</span>
+        <span>¥{cost.estimatedCostCNY.toFixed(4)}</span>
+      </div>
+
+      {/* 内容区 */}
+      <div className="mobile-content">
+        {mobileTab === 'camera' ? (
+          <VideoPreview
+            videoRef={videoRef}
+            isReady={cameraReady}
+            error={cameraError}
+            isRecording={isListening}
+            currentFrame={previewFrame || currentFrame}
+            cameraDisabled={!cameraReady}
+            onToggleCamera={handleToggleCamera}
+            settings={settings}
+            onSettingsChange={setSettings}
+            lastCapture={lastCapture}
+          />
+        ) : (
+          <ChatHistory
+            messages={messages}
+            isSending={isSending}
+            onClear={clearMessages}
+            onResetSession={resetSession}
+            settings={settings}
+            onSettingsChange={setSettings}
+            input={{
+              inputText,
+              onInputChange: handleInputChange,
+              onInputKeyDown: handleKeyDown,
+              onSend: handleSend,
+              onToggleListening: handleToggleListening,
+              onStopSpeaking: stopSpeaking,
+              isListening,
+              isSpeaking,
+              isInputLocked,
+              asrSupported: asrSupported ?? false,
+            }}
+          />
+        )}
+      </div>
+
+      {/* 固定底部输入栏 */}
+      <div className="mobile-input-bar">
+        <button className="mobile-input-bar__voice" onClick={handleToggleListening}>
+          {isListening ? '⏹' : '🎤'}
+        </button>
+        <input
+          className="mobile-input-bar__input"
+          type="text"
+          value={inputText}
+          onChange={(e) => handleInputChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="输入消息..."
+          disabled={isInputLocked}
+        />
+        <button className="mobile-input-bar__send" onClick={handleSend}>
+          ➤
+        </button>
+      </div>
+
+      {convError && (
+        <footer className="app__footer">
+          <div className="error">{convError}</div>
+        </footer>
+      )}
+    </div>
+  ) : (
     <div className="app app--split">
       <header className="app__header">
         <div className="app__header-left" />

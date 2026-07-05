@@ -1809,9 +1809,9 @@ textarea {
   }
 
   .bubble {
-    max-width: 88%;
+    max-width: 92%;
     padding: 10px 14px 12px;
-    font-size: 14px;
+    font-size: 15px;
   }
 
   .bubble--assistant,
@@ -1825,6 +1825,228 @@ textarea {
     top: 10px;
     width: 24px;
     height: 24px;
+  }
+
+  /* ====== 4. status-bar 移动端隐藏 ====== */
+  .status-bar--mobile-hidden {
+    display: none;
+  }
+
+  /* 移动端 header 区域的 CostStats 隐藏（已有精简统计栏替代） */
+  .app__header-right .status-bar {
+    display: none;
+  }
+
+  /* 移动端 ChatHistory 内的输入栏隐藏（已提升到 App 级别固定底部栏） */
+  .app--mobile .chat-history__input-bar {
+    display: none;
+  }
+
+  /* ====== 5. transport-select 缩窄 ====== */
+  .transport-select {
+    max-width: 100px;
+  }
+
+  /* ====== 6. 缩略图缩小 ====== */
+  .video-preview__thumb {
+    width: 80px;
+  }
+
+  /* ====== 7. lightbox 关闭按钮 ====== */
+  .image-lightbox__close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 1001;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(8px);
+    color: #ffffff;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .image-lightbox__close:hover,
+  .image-lightbox__close:active {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  /* ====== 9. chat-history__header 按钮文字缩小 ====== */
+  .chat-history__header .btn {
+    font-size: 12px;
+  }
+
+  .chat-history__header .btn--sm {
+    font-size: 11px;
+  }
+
+  /* ====== 1. Tab 栏 (.mobile-tabs) ====== */
+  .mobile-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .mobile-tabs__btn {
+    flex: 1 1 0%;
+    height: 44px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: color 0.2s ease, background 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-tabs__btn + .mobile-tabs__btn {
+    border-left: 1px solid var(--border-soft);
+  }
+
+  .mobile-tabs__btn--active {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .mobile-tabs__btn--active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 20%;
+    right: 20%;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    background: var(--accent);
+  }
+
+  /* ====== 2. 移动端固定输入栏 (.mobile-input-bar) ====== */
+  .mobile-input-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
+  }
+
+  .mobile-input-bar__voice {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.2s ease;
+  }
+
+  .mobile-input-bar__voice:active {
+    background: var(--accent);
+    color: #ffffff;
+  }
+
+  .mobile-input-bar__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-pill);
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .mobile-input-bar__input:focus {
+    border-color: var(--input-focus);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .mobile-input-bar__send {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--accent-gradient);
+    color: #ffffff;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: filter 0.2s ease, transform 0.1s ease;
+  }
+
+  .mobile-input-bar__send:active {
+    transform: scale(0.94);
+  }
+
+  /* ====== 3. 精简统计栏 (.cost-stats--compact) ====== */
+  .cost-stats--compact {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.4;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cost-stats--compact strong {
+    color: var(--accent);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cost-stats--compact__sep {
+    color: var(--muted);
+    opacity: 0.6;
+  }
+
+  /* ====== 8. 移动端内容区 (.mobile-content) ====== */
+  .mobile-content {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
   }
 }
 

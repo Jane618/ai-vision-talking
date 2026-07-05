@@ -1,21 +1,20 @@
 {
-  "name": "AI Talking · 多模态语音对话",
+  "name": "AI Talking - 多模态语音对话",
   "short_name": "AI Talking",
-  "description": "基于豆包多模态模型的语音对话应用：能听、能看、能说。",
+  "description": "基于摄像头画面和语音的多模态 AI 对话应用",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
   "orientation": "portrait",
-  "lang": "zh-CN",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
