@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChatHistory } from './components/ChatHistory';
+import { SessionList } from './components/SessionList';
 import { CostStats } from './components/CostStats';
 import { ThemeToggle } from './components/ThemeToggle';
 import { VideoPreview } from './components/VideoPreview';
 import { useASR } from './hooks/useASR';
 import { useCamera } from './hooks/useCamera';
 import { useConversation } from './hooks/useConversation';
-import type { MultimodalSettings } from './api/client';
+import type { MultimodalSettings, ConversationMessage } from './api/client';
+import { API_BASE, resumeSession } from './api/client';
 import { captureFrame, type CaptureResult } from './video/frameSampler';
+import { processFrame } from './video/frameProcessor';
 import { getScenePreset, DEFAULT_SCENE_PRESET_ID } from './presets/scenePresets';
 import { getQualityModePreset } from './presets/qualityModes';
 
@@ -39,6 +42,10 @@ export default function App() {
   });
   const [inputText, setInputText] = useState('');
   const [mobileTab, setMobileTab] = useState<'camera' | 'chat'>('chat');
+  const [view, setView] = useState<'chat' | 'history'>('chat');
+  const [historySessionUuid, setHistorySessionUuid] = useState<string | null>(null);
+  const [historyMessages, setHistoryMessages] = useState<ConversationMessage[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 640px)').matches);
   useEffect(() => {
@@ -82,39 +89,125 @@ export default function App() {
     sendMessage,
     clearMessages,
     resetSession,
+    setSessionMessages,
+    setSessionCost,
     stopSpeaking,
   } = useConversation({
     settings,
     getCurrentFrame: () => (cameraReady ? currentFrameRef.current || undefined : undefined),
   });
 
-  const captureLatestFrameForSend = useCallback(async (): Promise<string | undefined> => {
+  const handleShowHistory = useCallback(() => {
+    setView('history');
+    setHistoryMessages(null);
+    setHistorySessionUuid(null);
+  }, []);
+
+  const handleSelectHistorySession = useCallback(async (sessionUuid: string) => {
+    setHistorySessionUuid(sessionUuid);
+    setHistoryLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE}/conversations/${encodeURIComponent(sessionUuid)}`);
+      const json = await resp.json();
+      if (json.ok && Array.isArray(json.messages)) {
+        const msgs: ConversationMessage[] = json.messages.map((m: any) => ({
+          id: `h_${m.id}`,
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          ts: new Date(m.created_at).getTime(),
+          hasImage: !!m.has_image,
+        }));
+        setHistoryMessages(msgs);
+      }
+    } catch (err) {
+      console.error('加载历史会话失败:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const handleResumeSession = useCallback(async () => {
+    if (!historySessionUuid) return;
+    const result = await resumeSession(historySessionUuid);
+    if (result.ok) {
+      // 用原 sessionId 恢复，历史消息和费用填充到对话区
+      resetSession(result.sessionId);
+      if (historyMessages) {
+        setSessionMessages(historyMessages);
+      }
+      if (result.cost) {
+        setSessionCost(result.cost);
+      }
+      setView('chat');
+      setHistoryMessages(null);
+      setHistorySessionUuid(null);
+    }
+  }, [historySessionUuid, historyMessages, resetSession, setSessionMessages, setSessionCost]);
+
+  const handleBackToChat = useCallback(() => {
+    setView('chat');
+    setHistoryMessages(null);
+    setHistorySessionUuid(null);
+  }, []);
+
+  const captureLatestFrameForSend = useCallback(async (): Promise<string | Blob | undefined> => {
     const video = videoRef.current;
     if (!cameraReady || !video) {
       return undefined;
     }
 
     try {
-      const result = await captureFrame(
-        video,
-        {
-          imageSize: settings.imageSize,
-          imageQuality: settings.imageQuality,
-          adaptiveImageQuality: settings.adaptiveImageQuality,
-          imageQualityMin: settings.imageQualityMin,
-        },
-        null,
-      );
+      // 优先使用 Worker 路径（异步、不阻塞主线程）
+      const result = await processFrame(video, {
+        imageSize: settings.imageSize,
+        imageQuality: settings.imageQuality,
+        adaptiveImageQuality: settings.adaptiveImageQuality,
+        imageQualityMin: settings.imageQualityMin,
+      });
 
-      prevImageDataRef.current = result.imageData;
-      currentFrameRef.current = result.base64;
-      setCurrentFrame(result.base64);
-      setPreviewFrame(result.base64);
-      setLastCapture(result);
+      // 将 Blob 转为 data URL 用于本地预览
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(result.blob);
+      });
 
-      return result.base64;
+      currentFrameRef.current = dataUrl;
+      setCurrentFrame(dataUrl);
+      setPreviewFrame(dataUrl);
+      setLastCapture({
+        base64: dataUrl,
+        changed: true,
+        imageData: new ImageData(result.width, result.height),
+        effectiveQuality: result.effectiveQuality,
+        complexity: result.complexity,
+        estimatedBytes: result.estimatedBytes,
+      });
+
+      return result.blob;
     } catch {
-      return cameraReady ? currentFrameRef.current || undefined : undefined;
+      // Worker 失败，回退到同步路径
+      try {
+        const fallback = await captureFrame(
+          video,
+          {
+            imageSize: settings.imageSize,
+            imageQuality: settings.imageQuality,
+            adaptiveImageQuality: settings.adaptiveImageQuality,
+            imageQualityMin: settings.imageQualityMin,
+          },
+          null,
+        );
+
+        prevImageDataRef.current = fallback.imageData;
+        currentFrameRef.current = fallback.base64;
+        setCurrentFrame(fallback.base64);
+        setPreviewFrame(fallback.base64);
+        setLastCapture(fallback);
+        return fallback.base64;
+      } catch {
+        return cameraReady ? currentFrameRef.current || undefined : undefined;
+      }
     }
   }, [cameraReady, settings, videoRef]);
 
@@ -357,26 +450,45 @@ export default function App() {
         </section>
 
         <section className="app__column app__column--right">
-          <ChatHistory
-            messages={messages}
-            isSending={isSending}
-            onClear={clearMessages}
-            onResetSession={resetSession}
-            settings={settings}
-            onSettingsChange={setSettings}
-            input={{
-              inputText,
-              onInputChange: handleInputChange,
-              onInputKeyDown: handleKeyDown,
-              onSend: handleSend,
-              onToggleListening: handleToggleListening,
-              onStopSpeaking: stopSpeaking,
-              isListening,
-              isSpeaking,
-              isInputLocked,
-              asrSupported: asrSupported ?? false,
-            }}
-          />
+          {view === 'history' && !historyMessages ? (
+            <SessionList
+              onSelectSession={handleSelectHistorySession}
+              onBack={handleBackToChat}
+            />
+          ) : view === 'history' && historyMessages ? (
+            <ChatHistory
+              messages={historyMessages}
+              settings={settings}
+              onSettingsChange={setSettings}
+              onClear={() => setHistoryMessages(null)}
+              onResetSession={() => { setView('chat'); setHistoryMessages(null); setHistorySessionUuid(null); }}
+              historicalSessionUuid={historySessionUuid || undefined}
+              onResumeSession={handleResumeSession}
+            />
+          ) : (
+            <ChatHistory
+              messages={messages}
+              isSending={isSending}
+              onClear={clearMessages}
+              onResetSession={resetSession}
+              onNewSession={resetSession}
+              settings={settings}
+              onSettingsChange={setSettings}
+              onShowHistory={handleShowHistory}
+              input={{
+                inputText,
+                onInputChange: handleInputChange,
+                onInputKeyDown: handleKeyDown,
+                onSend: handleSend,
+                onToggleListening: handleToggleListening,
+                onStopSpeaking: stopSpeaking,
+                isListening,
+                isSpeaking,
+                isInputLocked,
+                asrSupported: asrSupported ?? false,
+              }}
+            />
+          )}
         </section>
       </main>
 

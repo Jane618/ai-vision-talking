@@ -9,10 +9,12 @@ from app.api.health import router as health_router
 from app.api.multimodal import router as multimodal_router
 from app.api.session import router as session_router
 from app.api.conversations import router as conversations_router
+from app.api.images import router as images_router
 from app.core.redis import get_redis_pool, close_redis_pool
 from app.core.database import get_db_pool, close_db_pool
 from app.config.settings import get_settings
 from app.services.session import init_session_manager
+from app.services.key_rotator import init_key_rotator
 
 
 @asynccontextmanager
@@ -23,6 +25,11 @@ async def lifespan(app: FastAPI):
     await init_session_manager(redis)
     await get_db_pool()
     settings = get_settings()
+    if settings.ark_api_keys:
+        keys = settings.ark_api_keys
+        if isinstance(keys, str):
+            keys = [k.strip() for k in keys.split(",") if k.strip()]
+        init_key_rotator(keys)
     logger.info(f"[main] ARK 已配置: {bool(settings.ark_api_key and settings.ark_model_endpoint)}")
     logger.info(f"[main] TTS 已配置: {bool(settings.volc_tts_app_id and settings.volc_tts_access_token)}")
     logger.info(f"[main] Redis: {settings.redis_url}")
@@ -55,6 +62,7 @@ app.include_router(health_router)
 app.include_router(multimodal_router)
 app.include_router(session_router)
 app.include_router(conversations_router)
+app.include_router(images_router)
 
 
 @app.exception_handler(404)

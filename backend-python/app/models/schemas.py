@@ -58,6 +58,7 @@ class HistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: Union[str, list[ChatMessageContentPart]]
     hasImage: bool | None = None
+    imageId: str | None = None  # 引用 PostgreSQL images 表中的 image_uuid
     timestamp: int
 
 
@@ -98,6 +99,7 @@ class TokenBreakdown(BaseModel):
 class MultimodalRequest(BaseModel):
     sessionId: str = ""
     image: str | None = None
+    imageId: str | None = None  # 引用已存储的图片，与 image 二选一
     userText: str = ""
     settings: UserSettings | None = None
 

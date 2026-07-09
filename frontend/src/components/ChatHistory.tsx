@@ -22,6 +22,11 @@ interface ChatHistoryProps {
   settings: MultimodalSettings;
   onSettingsChange: (next: MultimodalSettings) => void;
   input?: ChatHistoryInputProps;
+  /** 以下属性用于历史会话浏览模式 */
+  onShowHistory?: () => void;
+  onNewSession?: () => void;
+  historicalSessionUuid?: string;
+  onResumeSession?: () => void;
 }
 
 function formatTime(ts: number): string {
@@ -45,6 +50,10 @@ export function ChatHistory({
   settings,
   onSettingsChange,
   input,
+  onShowHistory,
+  onNewSession,
+  historicalSessionUuid,
+  onResumeSession,
 }: ChatHistoryProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const summaryPanelRef = useRef<HTMLDivElement>(null);
@@ -107,11 +116,23 @@ export function ChatHistory({
           </button>
         </div>
         <div className="chat-history__actions">
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onClear}>
-            清空对话
-          </button>
+          {onShowHistory && (
+            <button type="button" className="btn btn--ghost btn--sm" onClick={onShowHistory}>
+              历史
+            </button>
+          )}
+          {!historicalSessionUuid && (
+            <>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={onNewSession || onClear}>
+                新对话
+              </button>
+              <button type="button" className="btn btn--ghost btn--sm" onClick={onClear}>
+                清空对话
+              </button>
+            </>
+          )}
           <button type="button" className="btn btn--ghost btn--sm" onClick={onResetSession}>
-            重置会话
+            {historicalSessionUuid ? '返回' : '重置会话'}
           </button>
         </div>
       </div>
@@ -216,7 +237,18 @@ export function ChatHistory({
         )}
       </div>
 
-      {input && (
+      {historicalSessionUuid && (
+        <div className="chat-history__resume-bar">
+          <span className="hint">查看历史会话</span>
+          {onResumeSession && (
+            <button type="button" className="btn btn--primary" onClick={onResumeSession}>
+              继续此对话
+            </button>
+          )}
+        </div>
+      )}
+
+      {!historicalSessionUuid && input && (
         <div className="chat-history__input-bar">
           <input
             type="text"

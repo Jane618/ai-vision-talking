@@ -1,13 +1,15 @@
+import json
 import time
 import math
 from loguru import logger
 
+from app.core.database import get_db_pool
 from app.models.schemas import (
     Conversation, HistoryMessage, SummaryApplied, ArkChatMessage,
     UserSettings, ConversationCost, ArkUsage, ChatMessageTextContentPart,
     ChatMessageImageContentPart, TokenBreakdown,
 )
-from app.services.doubao import call_doubao, get_default_system_prompt
+from app.services.doubao import call_doubao, call_summary_model, get_default_system_prompt
 from app.services.cost import PROMPT_COST_CNY_PER_1K, COMPLETION_COST_CNY_PER_1K
 
 DEFAULT_SUMMARY_THRESHOLD_TOKENS = 8192
@@ -97,7 +99,7 @@ async def _run_summary(
         messages.append({"role": m.role, "content": text})
 
     try:
-        reply_text, usage = await call_doubao(
+        reply_text, usage = await call_summary_model(
             messages, {"temperature": 0.3, "maxTokens": 300},
         )
 
@@ -204,4 +206,143 @@ def build_token_breakdown(
 
 
 def append_history(conv: Conversation, msg: dict) -> None:
+    """向会话历史追加一条消息。支持 imageId 字段用于引用已存储的图片。"""
     conv.history.append(HistoryMessage(**msg))
+
+
+async def persist_conversation_to_pg(
+    session_id: str,
+    user_text: str,
+    reply_text: str,
+    has_image: bool,
+    image_id: str | None,
+    usage: ArkUsage,
+    token_breakdown: TokenBreakdown | None,
+    summary_applied: dict | None,
+    settings: dict | None,
+) -> None:
+    """将本轮对话持久化到 PostgreSQL（优雅降级：PG 不可用时跳过）。"""
+    pool = await get_db_pool()
+    if not pool:
+        logger.debug(f"[persist] PostgreSQL 未配置，跳过持久化 session={session_id}")
+        return
+
+    try:
+        async with pool.acquire() as conn:
+            # 1. 查找或创建会话记录
+            row = await conn.fetchrow(
+                "SELECT id FROM conversations WHERE session_uuid::text = $1 AND is_deleted = FALSE",
+                session_id,
+            )
+            if row:
+                conv_id = row["id"]
+            else:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO conversations (session_uuid, scene_preset, quality_mode, system_prompt)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING id
+                    """,
+                    session_id,
+                    (settings or {}).get("scenePresetId", "daily"),
+                    (settings or {}).get("qualityMode", "balanced"),
+                    (settings or {}).get("systemPrompt"),
+                )
+                conv_id = row["id"]
+
+            # 2. 获取当前最大 seq
+            seq_row = await conn.fetchrow(
+                "SELECT COALESCE(MAX(seq), 0) as max_seq FROM messages WHERE conversation_id = $1",
+                conv_id,
+            )
+            seq = seq_row["max_seq"]
+
+            # 3. 写入用户消息
+            content_for_json = (
+                [{"type": "text", "text": user_text or "请描述你看到的画面。"}]
+                if has_image
+                else (user_text or "")
+            )
+            await conn.execute(
+                """
+                INSERT INTO messages (conversation_id, role, content, content_text, has_image, seq)
+                VALUES ($1, 'user', $2::jsonb, $3, $4, $5)
+                """,
+                conv_id,
+                json.dumps(content_for_json, ensure_ascii=False),
+                user_text or "",
+                has_image,
+                seq + 1,
+            )
+
+            # 4. 写入 AI 回复
+            await conn.execute(
+                """
+                INSERT INTO messages (conversation_id, role, content, content_text,
+                    prompt_tokens, completion_tokens, total_tokens, seq)
+                VALUES ($1, 'assistant', $2::jsonb, $3, $4, $5, $6, $7)
+                """,
+                conv_id,
+                json.dumps(reply_text or "", ensure_ascii=False),
+                reply_text or "",
+                usage.prompt_tokens if usage else 0,
+                usage.completion_tokens if usage else 0,
+                usage.total_tokens if usage else 0,
+                seq + 2,
+            )
+
+            # 5. 写入费用记录
+            if usage and usage.total_tokens > 0:
+                cost_cny = (
+                    (usage.prompt_tokens / 1000) * PROMPT_COST_CNY_PER_1K
+                    + (usage.completion_tokens / 1000) * COMPLETION_COST_CNY_PER_1K
+                )
+                tbd = token_breakdown.model_dump() if token_breakdown else {}
+                await conn.execute(
+                    """
+                    INSERT INTO cost_records (conversation_id, call_number,
+                        prompt_tokens, completion_tokens, total_tokens, estimated_cost_cny,
+                        system_prompt_tokens, history_tokens, current_user_tokens, image_tokens,
+                        model_name)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    """,
+                    conv_id,
+                    (seq // 2) + 1,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    usage.total_tokens,
+                    cost_cny,
+                    tbd.get("systemPromptTokens"),
+                    tbd.get("historyTokens"),
+                    tbd.get("currentUserTokens"),
+                    tbd.get("imageTokens"),
+                    "ark",
+                )
+                await conn.execute(
+                    "UPDATE conversations SET total_cost_cny = total_cost_cny + $1, updated_at = NOW() WHERE id = $2",
+                    cost_cny, conv_id,
+                )
+
+            # 6. 写入摘要记录
+            if summary_applied:
+                await conn.execute(
+                    """
+                    INSERT INTO conversation_summaries (conversation_id,
+                        summary_text, replaced_msg_count, saved_tokens, summary_tokens, estimated_saved_cny)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    conv_id,
+                    summary_applied.get("summary", ""),
+                    summary_applied.get("replacedMessages", 0),
+                    summary_applied.get("savedTokens", 0),
+                    summary_applied.get("summaryTokens", 0),
+                    summary_applied.get("estimatedSavedCNY", 0),
+                )
+                await conn.execute(
+                    "UPDATE conversations SET summary = $1, updated_at = NOW() WHERE id = $2",
+                    summary_applied.get("summary", ""), conv_id,
+                )
+
+            logger.info(f"[persist] 会话 {session_id} 已持久化到 PG ({seq + 2} 条消息)")
+    except Exception as e:
+        logger.warning(f"[persist] PG 持久化失败（不影响主流程）: {e}")

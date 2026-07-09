@@ -306,6 +306,7 @@ Nginx 已配置 SSE 禁用缓冲（`X-Accel-Buffering: no`）和 WebSocket 支�
 | 文档 | 说明 |
 |---|---|
 | [技术方案 v2](./docs/technical-solution-v2.md) | Node.js -> Python 迁移技术方案，包含架构、API、SSE、会话、摘要、成本、数据库、部署 |
+| [移动端适配设计](./docs/mobile-adapter-design.md) | 移动端 Tab 布局、触摸适配、Capacitor 打包、PWA 配置 |
 | [产品 PRD](./docs/product-prd.md) | 产品目标、功能范围、场景、验收标准和埋点设计 |
 | [核心设计文档](./docs/design.md) | 用户故事、系统架构、成本控制、API 与部署说明 |
 

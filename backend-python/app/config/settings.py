@@ -10,7 +10,11 @@ class Settings(BaseSettings):
 
     # 火山引擎 Ark API
     ark_api_key: str = ""
+    ark_api_keys: list[str] = []  # 多 Key 轮转，逗号分隔
     ark_model_endpoint: str = ""
+    # 摘要模型（可选纯文本小模型，留空复用主模型）
+    ark_summary_api_key: str = ""
+    ark_summary_model_endpoint: str = ""
 
     # 火山引擎 TTS（可选）
     volc_tts_app_id: str = ""

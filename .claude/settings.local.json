@@ -7,7 +7,14 @@
       "Bash(curl *)",
       "Bash(.venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8001)",
       "Bash(powershell *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/api/multimodal.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/api/multimodal.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/services/image_store.py', encoding='utf-8'\\).read\\(\\)\\); print\\('image_store OK'\\); ast.parse\\(open\\('app/api/images.py', encoding='utf-8'\\).read\\(\\)\\); print\\('images OK'\\); ast.parse\\(open\\('app/models/schemas.py', encoding='utf-8'\\).read\\(\\)\\); print\\('schemas OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/main.py', encoding='utf-8'\\).read\\(\\)\\); print\\('main OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/api/multimodal.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\); ast.parse\\(open\\('app/services/conversation.py', encoding='utf-8'\\).read\\(\\)\\); print\\('conversation OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/services/doubao.py', encoding='utf-8'\\).read\\(\\)\\); print\\('doubao OK'\\); ast.parse\\(open\\('app/services/conversation.py', encoding='utf-8'\\).read\\(\\)\\); print\\('conversation OK'\\); ast.parse\\(open\\('app/services/key_rotator.py', encoding='utf-8'\\).read\\(\\)\\); print\\('key_rotator OK'\\); ast.parse\\(open\\('app/services/image_store.py', encoding='utf-8'\\).read\\(\\)\\); print\\('image_store OK'\\); ast.parse\\(open\\('app/api/images.py', encoding='utf-8'\\).read\\(\\)\\); print\\('images OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/api/conversations.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ]
   }
 }

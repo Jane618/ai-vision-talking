@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import time
 import uuid
 
@@ -19,6 +20,8 @@ from app.services.conversation import (
     append_history,
 )
 from app.services.cost import accumulate_cost, snapshot_cost
+from app.services.conversation import persist_conversation_to_pg
+from app.services.image_store import store_image
 from app.services.tts import tts_service
 from app.core.sse import format_sse
 
@@ -60,7 +63,21 @@ async def multimodal_stream(request: Request):
     async def event_generator():
         try:
             conv = await sm.get_or_create(session_id)
-            image_data_url = normalize_image_data_url(image) if image else None
+
+            # 存储图片到 PostgreSQL，获取 image_uuid 用于历史引用
+            image_id = None
+            image_data_url = None
+            if image:
+                image_data_url = normalize_image_data_url(image)
+                try:
+                    # 从 data URL 中提取原始 JPEG 字节
+                    b64_data = image
+                    if "," in b64_data:
+                        b64_data = b64_data.split(",", 1)[1]
+                    jpeg_bytes = base64.b64decode(b64_data)
+                    image_id = await store_image(session_id, jpeg_bytes)
+                except Exception as e:
+                    logger.warning(f"[multimodal] 图片存储失败（不影响主流程）: {e}")
 
             current_ctx = {
                 "userText": user_text,
@@ -79,8 +96,8 @@ async def multimodal_stream(request: Request):
                 system_prompt=settings.get("systemPrompt"),
             )
 
-            # 使用 asyncio.Queue 实现真正流式
-            queue: asyncio.Queue[str | Exception | None] = asyncio.Queue()
+            # 使用有界 Queue 实现反压：队列满时生产者阻塞，防止内存无限增长
+            queue: asyncio.Queue[str | Exception | None] = asyncio.Queue(maxsize=64)
 
             async def _call_and_feed():
                 """后台协程：调用 Ark 流式 API，将 delta 放入 queue，返回 usage。"""
@@ -129,14 +146,18 @@ async def multimodal_stream(request: Request):
             )
 
             if image_data_url:
-                append_history(conv, {
+                msg: dict = {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": user_text or "请描述你看到的画面。"},
                         {"type": "image_url", "image_url": {"url": image_data_url, "detail": "auto"}},
                     ],
-                    "hasImage": True, "timestamp": int(time.time() * 1000),
-                })
+                    "hasImage": True,
+                    "timestamp": int(time.time() * 1000),
+                }
+                if image_id:
+                    msg["imageId"] = image_id
+                append_history(conv, msg)
             else:
                 append_history(conv, {
                     "role": "user", "content": user_text,
@@ -155,6 +176,19 @@ async def multimodal_stream(request: Request):
                 )
                 if summary_applied:
                     yield format_sse("summary", summary_applied)
+
+            # 异步持久化到 PostgreSQL（不阻塞 SSE 响应）
+            asyncio.create_task(persist_conversation_to_pg(
+                session_id=session_id,
+                user_text=user_text,
+                reply_text=reply_text,
+                has_image=bool(image_data_url),
+                image_id=image_id,
+                usage=final_usage,
+                token_breakdown=token_breakdown,
+                summary_applied=summary_applied,
+                settings=settings,
+            ))
 
             yield format_sse("done", {
                 "ok": True,
@@ -217,6 +251,18 @@ async def multimodal(request: Request):
         conv = await sm.get_or_create(session_id)
         image_data_url = normalize_image_data_url(image) if image else None
 
+        # 存储图片到 PostgreSQL
+        image_id = None
+        if image:
+            try:
+                b64_data = image
+                if "," in b64_data:
+                    b64_data = b64_data.split(",", 1)[1]
+                jpeg_bytes = base64.b64decode(b64_data)
+                image_id = await store_image(session_id, jpeg_bytes)
+            except Exception as e:
+                logger.warning(f"[multimodal] 图片存储失败（不影响主流程）: {e}")
+
         current_ctx = {
             "userText": user_text,
             "imageDataUrl": image_data_url,
@@ -235,14 +281,18 @@ async def multimodal(request: Request):
         )
 
         if image_data_url:
-            append_history(conv, {
+            msg: dict = {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": user_text or "请描述你看到的画面。"},
                     {"type": "image_url", "image_url": {"url": image_data_url, "detail": "auto"}},
                 ],
-                "hasImage": True, "timestamp": int(time.time() * 1000),
-            })
+                "hasImage": True,
+                "timestamp": int(time.time() * 1000),
+            }
+            if image_id:
+                msg["imageId"] = image_id
+            append_history(conv, msg)
         else:
             append_history(conv, {
                 "role": "user", "content": user_text,
@@ -257,6 +307,19 @@ async def multimodal(request: Request):
             summary_applied = await summarize_if_needed(
                 conv, settings, {"systemPrompt": settings.get("systemPrompt")},
             )
+
+        # 持久化到 PostgreSQL
+        await persist_conversation_to_pg(
+            session_id=session_id,
+            user_text=user_text,
+            reply_text=reply_text,
+            has_image=bool(image_data_url),
+            image_id=image_id,
+            usage=usage,
+            token_breakdown=token_breakdown,
+            summary_applied=summary_applied,
+            settings=settings,
+        )
 
         audio_base64 = None
         audio_mime_type = None

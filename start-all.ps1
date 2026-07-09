@@ -134,7 +134,7 @@ if (Test-PortListen $BackendPort) {
 $uvicornPath = Join-Path $BackendDir ".venv\Scripts\uvicorn.exe"
 $backendProc = Start-Process -FilePath $uvicornPath `
     -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", $BackendPort `
-    -WorkingDirectory $BackendDir -WindowStyle Hidden -PassThru
+    -WorkingDirectory $BackendDir -PassThru
 $global:Processes += $backendProc
 Write-Ok "后端进程已启动 (PID: $($backendProc.Id))"
 

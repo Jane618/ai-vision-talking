@@ -64,9 +64,12 @@ class MessageORM(BaseModel):
 
 class ImageORM(BaseModel):
     id: int
+    image_uuid: str | None = None  # UUID 字符串，对外暴露的 image_id
     message_id: int | None
-    conversation_id: int
-    image_url: str
+    conversation_id: int | None
+    session_uuid: str | None = None
+    image_data: bytes | None = None
+    image_url: str | None = None
     image_size: int | None = None
     image_width: int | None = None
     image_height: int | None = None

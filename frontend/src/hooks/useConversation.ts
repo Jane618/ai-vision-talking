@@ -7,6 +7,7 @@ import {
   createSessionId,
   MultimodalSettings,
   sendMultimodalStream,
+  sendMultimodalStreamWithBlob,
   speakWithBrowserTTS,
   stopSpeaking as stopSpeakingCore,
 } from '../api/client';
@@ -14,8 +15,9 @@ import { getCapacitorTTS, isCapacitor } from '../platform';
 
 interface UseConversationOptions {
   settings: MultimodalSettings;
-  getCurrentFrame?: () => string | undefined;
+  getCurrentFrame?: () => string | Blob | undefined;
   onFrameCaptured?: (base64: string) => void;
+  initialMessages?: ConversationMessage[];
 }
 
 interface UseConversationResult {
@@ -26,9 +28,11 @@ interface UseConversationResult {
   isSpeaking: boolean;
   error: string | null;
   cost: CostInfo;
-  sendMessage: (userText: string, image?: string) => Promise<void>;
+  sendMessage: (userText: string, image?: string | Blob) => Promise<void>;
   clearMessages: () => void;
-  resetSession: () => void;
+  resetSession: (sessionIdOverride?: string) => void;
+  setSessionMessages: (msgs: ConversationMessage[]) => void;
+  setSessionCost: (c: CostInfo) => void;
   stopSpeaking: () => void;
 }
 
@@ -133,10 +137,10 @@ async function speakNativeOrFallback(text: string, lang = 'zh-CN'): Promise<void
 }
 
 export function useConversation(options: UseConversationOptions): UseConversationResult {
-  const { settings, getCurrentFrame } = options;
+  const { settings, getCurrentFrame, initialMessages } = options;
 
   const [sessionId, setSessionId] = useState<string>(() => createSessionId());
-  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [messages, setMessages] = useState<ConversationMessage[]>(initialMessages || []);
   const [isSending, setIsSending] = useState(false);
   const [isInputLocked, setIsInputLocked] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -264,11 +268,23 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   );
 
   const sendMessage = useCallback(
-    async (userText: string, image?: string) => {
+    async (userText: string, image?: string | Blob) => {
       const text = (userText || '').trim();
       if (!text) return;
       const currentImage = image ?? getCurrentFrame?.();
       speechStoppedRef.current = false;
+
+      // 将 Blob 转为 data URL 用于 UI 展示
+      let displayImage: string | undefined;
+      if (currentImage instanceof Blob) {
+        displayImage = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(currentImage);
+        });
+      } else {
+        displayImage = currentImage || undefined;
+      }
 
       // 估算用户消息的 tokens：文字 1.8 字/token，有画面额外估算 200 tokens
       const userMsgTokens =
@@ -279,7 +295,7 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         content: text,
         ts: Date.now(),
         hasImage: !!currentImage,
-        image: currentImage || undefined,
+        image: displayImage,
         tokens: userMsgTokens,
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -293,7 +309,10 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         let streamedReply = '';
         let aiMessageStarted = false;
 
-        const response = await sendMultimodalStream(
+        const apiCall = currentImage instanceof Blob
+          ? sendMultimodalStreamWithBlob
+          : sendMultimodalStream;
+        const response = await apiCall(
           {
             sessionId,
             userText: text,
@@ -447,13 +466,17 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     setIsSpeaking(false);
   }, []);
 
-  const resetSession = useCallback(() => {
-    const newSession = createSessionId();
+  const resetSession = useCallback((sessionIdOverride?: string) => {
+    const newSession = sessionIdOverride || createSessionId();
     clearSessionApi(sessionId).catch(() => undefined);
     setSessionId(newSession);
-    setMessages([]);
     setError(null);
-    setCost(DEFAULT_COST);
+    if (sessionIdOverride) {
+      // 恢复会话：保留现有消息（由 App.tsx 通过 initialMessages 传递）和费用
+    } else {
+      setMessages([]);
+      setCost(DEFAULT_COST);
+    }
     setIsSending(false);
     setIsInputLocked(false);
     speechRunIdRef.current += 1;
@@ -476,6 +499,8 @@ export function useConversation(options: UseConversationOptions): UseConversatio
     sendMessage,
     clearMessages,
     resetSession,
+    setSessionMessages: setMessages,
+    setSessionCost: setCost,
     stopSpeaking,
   };
 }

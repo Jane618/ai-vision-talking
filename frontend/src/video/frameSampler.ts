@@ -220,6 +220,56 @@ function easeInOut(value: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * 将 video 当前帧编码为 JPEG Blob（替代 base64 toDataURL）。
+ * 减少 33% 传输体积，配合 multipart/form-data 使用。
+ */
+export async function captureFrameAsBlob(
+  videoEl: HTMLVideoElement,
+  settings: CaptureSettings,
+): Promise<{
+  blob: Blob;
+  effectiveQuality: number;
+  complexity: ImageComplexity;
+  estimatedBytes: number;
+  width: number;
+  height: number;
+}> {
+  const { imageSize = 512, imageQuality = 0.8 } = settings;
+
+  const vw = videoEl.videoWidth;
+  const vh = videoEl.videoHeight;
+  if (!vw || !vh) {
+    throw new Error('视频尚未就绪，无法抽帧');
+  }
+
+  const scale = Math.min(1, imageSize / Math.max(vw, vh));
+  const outW = Math.max(1, Math.round(vw * scale));
+  const outH = Math.max(1, Math.round(vh * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('无法创建 canvas 2D 上下文');
+
+  ctx.drawImage(videoEl, 0, 0, outW, outH);
+  const imageData = ctx.getImageData(0, 0, outW, outH);
+
+  const complexity = analyzeImageComplexity(imageData);
+  const effectiveQuality = resolveImageQuality(settings, complexity.score);
+
+  const blob = await new Promise<Blob>((resolve) => {
+    canvas.toBlob(
+      (b) => resolve(b || new Blob([], { type: 'image/jpeg' })),
+      'image/jpeg',
+      effectiveQuality,
+    );
+  });
+
+  return { blob, effectiveQuality, complexity, estimatedBytes: blob.size, width: outW, height: outH };
+}
+
 /** 将 ImageData 降采样为 targetW*targetH 的灰度数组。 */
 function downsample(src: ImageData, targetW: number, targetH: number): number[] | null {
   if (!src.width || !src.height) return null;
